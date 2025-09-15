@@ -22,7 +22,7 @@ export const aboutStyles = StyleSheet.create({
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+
   },
   logoBox: {
     width: 40,
@@ -44,11 +44,11 @@ export const aboutStyles = StyleSheet.create({
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 18,
+
   },
   navLinks: {
     flexDirection: "row",
-    gap: 18,
+
     alignItems: "center",
   },
   navItem: {
@@ -62,7 +62,7 @@ export const aboutStyles = StyleSheet.create({
   },
   iconButtons: {
     flexDirection: "row",
-    gap: 8,
+
     marginLeft: Theme.spacing.md,
   },
   iconButton: {
@@ -87,7 +87,7 @@ export const aboutStyles = StyleSheet.create({
     width: Math.min(960, width - Theme.spacing.lg * 4),
     display: "flex",
     flexDirection: "column",
-    gap: Theme.spacing.md,
+
   },
   titleRow: {
     flexDirection: "row",

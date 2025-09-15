@@ -161,6 +161,7 @@
 //   },
 // });
 
+
 // styles/home.ts
 import { StyleSheet, Platform } from "react-native";
 
@@ -187,15 +188,11 @@ export const homeStyles = StyleSheet.create({
       ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4 },
     }),
   },
-
-  /* Header children spacing: replace 'gap' with explicit margins on elements */
   brand: { flexDirection: "row", alignItems: "center" },
   logo: { width: 40, height: 40, resizeMode: "cover", borderRadius: 6 },
   brandText: { fontSize: 16, fontWeight: "700", marginLeft: 12 },
-
   navDesktop: { flexDirection: "row", alignItems: "center" },
   navLink: { fontSize: 15, fontWeight: "600", color: "#111", marginRight: 28 },
-
   headerActions: { flexDirection: "row", alignItems: "center" },
   iconBtn: {
     height: 40,
@@ -217,6 +214,20 @@ export const homeStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
+
+    /* center and card-like layout on wide screens */
+    alignSelf: "center",
+    maxWidth: 1200,
+    borderRadius: 16,
+    paddingHorizontal: 0,
+
+    ...Platform.select({
+      web: {
+        boxShadow: "0 12px 30px rgba(16,24,40,0.08)",
+        /* make sure overflow hidden works on web */
+        overflow: "hidden",
+      },
+    }),
   },
   heroImage: {
     width: "100%",
@@ -224,13 +235,14 @@ export const homeStyles = StyleSheet.create({
     resizeMode: "cover",
     ...Platform.select({
       web: {
-        objectPosition: "50% 35%",
+        /* center the focal point of the image */
+        objectPosition: "50% 50%",
       },
     }),
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.26)",
+    backgroundColor: "rgba(0,0,0,0.36)", /* slightly stronger for contrast */
   },
   heroContent: {
     zIndex: 5,
@@ -238,6 +250,14 @@ export const homeStyles = StyleSheet.create({
     paddingHorizontal: 28,
     alignItems: "center",
     justifyContent: "center",
+
+    /* constrain text width so the heading wraps like your second screenshot */
+    ...Platform.select({
+      web: {
+        maxWidth: 920,
+        marginHorizontal: "auto",
+      },
+    }),
   },
   heroTitle: {
     fontSize: 44,
@@ -345,84 +365,6 @@ export const homeStyles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
   },
-
-  /* ---------------- SHOP PAGE ADDITIONS (no-gap safe) ---------------- */
-  shopHeading: {
-    fontSize: 34,
-    fontWeight: "900",
-    marginBottom: 18,
-    color: "#0f1720",
-  },
-  filtersRow: {
-    flexDirection: "row",
-    marginBottom: 20,
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-  filterPill: {
-    backgroundColor: "#f5f3f1",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    fontWeight: "600",
-    marginRight: 12,
-    marginBottom: 8,
-    ...Platform.select({
-      web: { boxShadow: "0 2px 6px rgba(16,24,40,0.04)" },
-      android: { elevation: 1 },
-      ios: { shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 2 },
-    }),
-  },
-  productGrid: {
-    width: "100%",
-    paddingTop: 6,
-  },
-  productCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    overflow: "hidden",
-    alignItems: "flex-start",
-    width: "100%",
-    ...Platform.select({
-      web: { boxShadow: "0 6px 18px rgba(16,24,40,0.06)" },
-      android: { elevation: 3 },
-      ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6 },
-    }),
-    paddingBottom: 12,
-    marginBottom: 20,
-    marginRight: 20,
-  },
-  productImage: {
-    width: "100%",
-    aspectRatio: 1,
-    resizeMode: "cover",
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  productInfo: {
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    width: "100%",
-  },
-  productTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-    marginTop: 6,
-  },
-  productPrice: {
-    fontSize: 14,
-    color: "#6b7280",
-    marginTop: 4,
-  },
-  gridColWrapper: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "flex-start",
-  },
-  col1: { width: "100%" },
-  col2: { width: "48%" },
-  col3: { width: "31%" },
-  col4: { width: "23%" },
-  col5: { width: "19%" },
 });
+
+export default homeStyles;

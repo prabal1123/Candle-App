@@ -19,7 +19,7 @@ export const contactStyles = StyleSheet.create({
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12 as any,
+
   },
   logoBox: {
     width: 40,
@@ -40,12 +40,12 @@ export const contactStyles = StyleSheet.create({
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16 as any,
+
   },
   navLinks: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 18 as any,
+
     marginRight: 12,
   },
   navItem: {
@@ -60,7 +60,7 @@ export const contactStyles = StyleSheet.create({
   iconButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8 as any,
+
   },
   iconButton: {
     height: 40,
