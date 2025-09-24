@@ -1,21 +1,3 @@
-// // features/cart/useCart.ts
-// import { useCallback } from "react";
-// import { useAppDispatch, useAppSelector } from "@/store";
-// import { addToCart, removeFromCart, updateQuantity, clearCart } from "./cartSlice";
-
-// export const useCart = () => {
-//   const dispatch = useAppDispatch();
-//   const cart = useAppSelector((s) => s.cart);
-
-//   return {
-//     cart,
-//     addToCart: useCallback((item: any) => dispatch(addToCart(item)), [dispatch]),
-//     removeFromCart: useCallback((id: string) => dispatch(removeFromCart(id)), [dispatch]),
-//     updateQuantity: useCallback((id: string, qty: number) => dispatch(updateQuantity({ id, qty })), [dispatch]),
-//     clearCart: useCallback(() => dispatch(clearCart()), [dispatch]),
-//   };
-// };
-
 // features/cart/useCart.ts
 import { useCallback } from "react";
 import { useAppDispatch, useAppSelector } from "@/store";

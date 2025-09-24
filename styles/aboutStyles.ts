@@ -110,6 +110,7 @@ export const aboutStyles = StyleSheet.create({
   heroBlock: {
     width: "100%",
     height: 220,
+    aspectRatio: 21 / 9,
     borderRadius: Theme.radius.lg,
     overflow: "hidden",
     marginVertical: Theme.spacing.sm,

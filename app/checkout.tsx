@@ -1,193 +1,3 @@
-// // app/checkout.tsx
-// import React, { useEffect, useState } from "react";
-// import {
-//   View,
-//   Text,
-//   TextInput,
-//   Pressable,
-//   Alert,
-//   ActivityIndicator,
-//   ScrollView,
-// } from "react-native";
-// import { useRouter } from "expo-router";
-// import { useAuth } from "@/features/auth/AuthProvider";
-// //import { useAppSelector, useAppDispatch } from "../store/hooks"; // keep if this resolves in your project
-// import { clearCart } from "@/features/cart/cartSlice";
-// import { useAppSelector, useAppDispatch } from "../store";
-
-// export default function CheckoutScreen() {
-//   const { user, loading } = useAuth();
-//   const router = useRouter();
-
-//   // SAFE selector: guard if s.cart is undefined
-//   const items = useAppSelector((s) => s.cart?.items ?? []);
-//   const dispatch = useAppDispatch();
-
-//   const subtotal = items.reduce((s, it) => s + (it.price || 0) * (it.quantity || 1), 0);
-
-//   // form
-//   const [name, setName] = useState("");
-//   const [phone, setPhone] = useState("");
-//   const [address, setAddress] = useState("");
-//   const [placing, setPlacing] = useState(false);
-
-//   // auth guard + redirect to login (with redirectTo param)
-//   useEffect(() => {
-//     if (!loading && !user) {
-//       // cast pathname to any to avoid expo-router route-union typing issues
-//       router.replace({ pathname: "/auth/login" as any, params: { redirectTo: "/checkout" } } as any);
-//     }
-//   }, [user, loading]);
-
-//   if (loading) {
-//     return (
-//       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-//         <ActivityIndicator />
-//         <Text style={{ marginTop: 8 }}>Checking authentication...</Text>
-//       </View>
-//     );
-//   }
-
-//   if (!user) return null; // redirect is in progress
-
-//   if (items.length === 0) {
-//     return (
-//       <View style={{ flex: 1, padding: 16 }}>
-//         <Text style={{ fontSize: 18, fontWeight: "600" }}>Your cart is empty.</Text>
-//         <Pressable onPress={() => router.replace("/")} style={{ marginTop: 12 }}>
-//           <Text style={{ color: "#111" }}>Go shopping</Text>
-//         </Pressable>
-//       </View>
-//     );
-//   }
-
-//   const validate = () => {
-//     if (!name.trim()) return "Please enter your name";
-//     if (!phone.trim()) return "Please enter a phone number";
-//     if (!address.trim()) return "Please enter delivery address";
-//     if (items.length === 0) return "Your cart is empty";
-//     return null;
-//   };
-
-//   const placeOrder = async () => {
-//     const err = validate();
-//     if (err) {
-//       Alert.alert("Missing information", err);
-//       return;
-//     }
-
-//     setPlacing(true);
-//     try {
-//       const order = {
-//         id: `CANDLE-${Date.now()}`,
-//         userId: user?.id ?? null,
-//         items,
-//         subtotal,
-//         shipping: 0,
-//         total: subtotal,
-//         customer: { name, phone, address },
-//         createdAt: new Date().toISOString(),
-//       };
-
-//       // optionally persist to Supabase here
-
-//       dispatch(clearCart());
-
-//       const encoded = encodeURIComponent(JSON.stringify(order));
-//       router.replace({ pathname: "/confirmation", params: { order: encoded } } as any);
-//     } catch (e: any) {
-//       console.error("Place order failed:", e);
-//       Alert.alert("Order error", e?.message ?? String(e));
-//       setPlacing(false);
-//     }
-//   };
-
-//   return (
-//     <ScrollView contentContainerStyle={{ padding: 16 }}>
-//       <Text style={{ fontSize: 22, fontWeight: "700" }}>Checkout</Text>
-
-//       <View style={{ marginTop: 12 }}>
-//         <Text style={{ fontWeight: "600" }}>Name</Text>
-//         <TextInput
-//           value={name}
-//           onChangeText={setName}
-//           placeholder="Full name"
-//           style={{
-//             borderWidth: 1,
-//             borderColor: "#ddd",
-//             padding: 10,
-//             borderRadius: 8,
-//             marginTop: 6,
-//           }}
-//         />
-//       </View>
-
-//       <View style={{ marginTop: 12 }}>
-//         <Text style={{ fontWeight: "600" }}>Phone</Text>
-//         <TextInput
-//           value={phone}
-//           onChangeText={setPhone}
-//           placeholder="Mobile number"
-//           keyboardType="phone-pad"
-//           style={{
-//             borderWidth: 1,
-//             borderColor: "#ddd",
-//             padding: 10,
-//             borderRadius: 8,
-//             marginTop: 6,
-//           }}
-//         />
-//       </View>
-
-//       <View style={{ marginTop: 12 }}>
-//         <Text style={{ fontWeight: "600" }}>Address</Text>
-//         <TextInput
-//           value={address}
-//           onChangeText={setAddress}
-//           placeholder="Delivery address"
-//           multiline
-//           style={{
-//             borderWidth: 1,
-//             borderColor: "#ddd",
-//             padding: 10,
-//             borderRadius: 8,
-//             marginTop: 6,
-//             height: 110,
-//             textAlignVertical: "top",
-//           }}
-//         />
-//       </View>
-
-//       <View style={{ marginTop: 18, padding: 12, backgroundColor: "#fafafa", borderRadius: 8 }}>
-//         <Text style={{ fontWeight: "600" }}>Summary</Text>
-//         <Text>Items: {items.length}</Text>
-//         <Text>Subtotal: ₹{subtotal.toFixed(2)}</Text>
-//         <Text>Total: ₹{subtotal.toFixed(2)}</Text>
-//       </View>
-
-//       <View style={{ marginTop: 18 }}>
-//         <Pressable
-//           onPress={placeOrder}
-//           disabled={placing}
-//           style={{
-//             backgroundColor: placing ? "#ccc" : "#111",
-//             paddingVertical: 12,
-//             borderRadius: 8,
-//             alignItems: "center",
-//           }}
-//         >
-//           <Text style={{ color: "#fff", fontWeight: "700" }}>
-//             {placing ? "Placing order..." : "Place order"}
-//           </Text>
-//         </Pressable>
-//       </View>
-//     </ScrollView>
-//   );
-// }
-
-
-
-
 // app/checkout.tsx
 import React, { useEffect, useState } from "react";
 import {
@@ -198,26 +8,42 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/features/auth/AuthProvider";
-//import { useAppSelector, useAppDispatch } from "../store/hooks"; // keep if this resolves in your project
 import { clearCart } from "@/features/cart/cartSlice";
-import { useAppSelector, useAppDispatch } from "../store";
+import { useAppSelector, useAppDispatch } from "../store"; // adjust if needed
 
-// Payment button (web-only). Keep the file at app/components/PlaceOrderButton.tsx
-import PlaceOrderButton from "../components/PlaceOrderButton";
+// Payment button
+import PlaceOrderButton from "@/components/PlaceOrderButton";
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:4242";
+
+/** Helpers for money conversions **/
+const toPaise = (valueInRupees: number) => Math.round(valueInRupees * 100);
+const paiseToRupeesStr = (paise: number) => (paise / 100).toFixed(2);
 
 export default function CheckoutScreen() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  // SAFE selector: guard if s.cart is undefined
   const items = useAppSelector((s) => s.cart?.items ?? []);
   const dispatch = useAppDispatch();
 
-  const subtotal = items.reduce((s, it) => s + (it.price || 0) * (it.quantity || 1), 0);
+  // Compute subtotal in paise (robust: prefer price_cents, otherwise use price in rupees)
+  const subtotalPaise = items.reduce((sum, it) => {
+    const qty = Number(it.quantity ?? it.qty ?? 1);
+    const cents =
+      typeof it.price_cents === "number"
+        ? Math.round(it.price_cents)
+        : typeof it.price === "number"
+        ? Math.round(it.price * 100)
+        : toPaise(Number(it.price ?? 0));
+    return sum + cents * Math.max(1, qty);
+  }, 0);
+
+  // also keep subtotal rupees for display
+  const subtotal = Number((subtotalPaise / 100).toFixed(2));
 
   // form
   const [name, setName] = useState("");
@@ -225,15 +51,16 @@ export default function CheckoutScreen() {
   const [address, setAddress] = useState("");
   const [placing, setPlacing] = useState(false);
 
-  // local order state: create order object and pass to PlaceOrderButton
   const [localOrder, setLocalOrder] = useState<any | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
 
-  // auth guard + redirect to login (with redirectTo param)
+  // auth guard
   useEffect(() => {
     if (!loading && !user) {
-      // cast pathname to any to avoid expo-router route-union typing issues
-      router.replace({ pathname: "/auth/login" as any, params: { redirectTo: "/checkout" } } as any);
+      router.replace({
+        pathname: "/auth/login" as any,
+        params: { redirectTo: "/checkout" },
+      } as any);
     }
   }, [user, loading]);
 
@@ -246,12 +73,14 @@ export default function CheckoutScreen() {
     );
   }
 
-  if (!user) return null; // redirect is in progress
+  if (!user) return null;
 
   if (items.length === 0) {
     return (
       <View style={{ flex: 1, padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "600" }}>Your cart is empty.</Text>
+        <Text style={{ fontSize: 18, fontWeight: "600" }}>
+          Your cart is empty.
+        </Text>
         <Pressable onPress={() => router.replace("/")} style={{ marginTop: 12 }}>
           <Text style={{ color: "#111" }}>Go shopping</Text>
         </Pressable>
@@ -267,7 +96,7 @@ export default function CheckoutScreen() {
     return null;
   };
 
-  // prepare order locally (do NOT clear cart here)
+  // prepare local order
   const prepareOrder = async () => {
     const err = validate();
     if (err) {
@@ -277,18 +106,48 @@ export default function CheckoutScreen() {
 
     setPlacing(true);
     try {
+      // Build items with price_cents included
+      const orderItems = items.map((it: any) => {
+        const qty = Number(it.quantity ?? it.qty ?? 1);
+        const priceCents =
+          typeof it.price_cents === "number"
+            ? Math.round(it.price_cents)
+            : typeof it.price === "number"
+            ? Math.round(it.price * 100)
+            : toPaise(Number(it.price ?? 0));
+
+        return {
+          productId: it.id ?? it.productId,
+          name: it.name ?? it.title,
+          qty,
+          price_cents: priceCents,
+          // include human-friendly rupees price too if you want
+          price: Number((priceCents / 100).toFixed(2)),
+        };
+      });
+
+      // compute totals
+      const subtotalPaiseLocal = orderItems.reduce(
+        (sum: number, it: any) => sum + (it.price_cents ?? 0) * (it.qty ?? 1),
+        0
+      );
+      const shippingPaise = 0; // adjust logic if needed
+      const totalPaise = subtotalPaiseLocal + shippingPaise;
+
       const order = {
-        id: `CANDLE-${Date.now()}`,
+        clientReference: `CANDLE-${Date.now()}`,
         userId: user?.id ?? null,
-        items,
-        subtotal,
-        shipping: 0,
-        total: subtotal,
+        items: orderItems,
+        subtotal: Number((subtotalPaiseLocal / 100).toFixed(2)), // rupees for display
+        subtotal_paise: subtotalPaiseLocal, // paise for payment/backend
+        shipping: Number((shippingPaise / 100).toFixed(2)), // rupees
+        shipping_paise: shippingPaise,
+        total: Number((totalPaise / 100).toFixed(2)), // rupees
+        total_paise: totalPaise, // paise
         customer: { name, phone, address },
         createdAt: new Date().toISOString(),
       };
 
-      // set local order - the PlaceOrderButton will call backend /place-order and then open Razorpay
       setLocalOrder(order);
     } catch (e: any) {
       console.error("Prepare order failed:", e);
@@ -298,28 +157,32 @@ export default function CheckoutScreen() {
     }
   };
 
-  // called when /verify-payment returns verified: true (via PlaceOrderButton.onPaid)
-  const handlePaymentSuccess = async (verifyPayload: any) => {
+  // ✅ FIXED: now only clears cart + redirects, no extra verify call
+  const handlePaymentSuccess = async (verifyResponse: any) => {
+    setProcessingPayment(true);
     try {
-      setProcessingPayment(true);
-      // Now it's safe to clear the cart and navigate to confirmation
+      if (!verifyResponse?.ok || !verifyResponse?.orderId) {
+        throw new Error("Payment verified but no orderId returned");
+      }
+
+      const orderId = String(verifyResponse.orderId);
+
+      // Success: backend already verified & persisted
       dispatch(clearCart());
 
-      const encoded = encodeURIComponent(JSON.stringify({ ...localOrder, payment: verifyPayload }));
-      router.replace({ pathname: "/confirmation", params: { order: encoded } } as any);
+      // Go to confirmation screen
+      router.replace({ pathname: "/confirmation", params: { orderId } } as any);
     } catch (e: any) {
       console.error("Post-payment handling failed", e);
-      Alert.alert("Error", String(e?.message ?? e));
+      Alert.alert("Error", e?.message ?? String(e));
     } finally {
       setProcessingPayment(false);
     }
   };
 
-  // called if payment fails / verification fails
   const handlePaymentError = (err: any) => {
     console.warn("Payment error", err);
     Alert.alert("Payment error", typeof err === "string" ? err : JSON.stringify(err));
-    // keep cart intact so user can retry
   };
 
   return (
@@ -378,7 +241,14 @@ export default function CheckoutScreen() {
         />
       </View>
 
-      <View style={{ marginTop: 18, padding: 12, backgroundColor: "#fafafa", borderRadius: 8 }}>
+      <View
+        style={{
+          marginTop: 18,
+          padding: 12,
+          backgroundColor: "#fafafa",
+          borderRadius: 8,
+        }}
+      >
         <Text style={{ fontWeight: "600" }}>Summary</Text>
         <Text>Items: {items.length}</Text>
         <Text>Subtotal: ₹{subtotal.toFixed(2)}</Text>
@@ -386,7 +256,6 @@ export default function CheckoutScreen() {
       </View>
 
       <View style={{ marginTop: 18 }}>
-        {/* If localOrder is not created yet, show the prepare button (keeps original look) */}
         {!localOrder ? (
           <Pressable
             onPress={prepareOrder}
@@ -403,28 +272,20 @@ export default function CheckoutScreen() {
             </Text>
           </Pressable>
         ) : (
-          // Once localOrder exists, show the web payment button (PlaceOrderButton)
           <View>
-            <Text style={{ marginBottom: 8 }}>Proceed to payment (web checkout)</Text>
+            <Text style={{ marginBottom: 8 }}>Proceed to payment</Text>
 
-            {/* PlaceOrderButton will call your /place-order endpoint and open Razorpay */}
             <PlaceOrderButton
               localOrder={localOrder}
-              backendUrl={process.env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:4242"}
-              onPaid={(verifyPayload: any) => handlePaymentSuccess(verifyPayload)}
+              backendUrl={BACKEND_URL}
+              onPaid={(verifyResponse: any) => handlePaymentSuccess(verifyResponse)}
               onError={(err: any) => handlePaymentError(err)}
             />
 
             <View style={{ marginTop: 12 }}>
               <Pressable
-                onPress={() => {
-                  // allow user to cancel payment attempt and edit order
-                  setLocalOrder(null);
-                }}
-                style={{
-                  paddingVertical: 8,
-                  alignItems: "center",
-                }}
+                onPress={() => setLocalOrder(null)}
+                style={{ paddingVertical: 8, alignItems: "center" }}
               >
                 <Text style={{ color: "#666" }}>Cancel / Edit order</Text>
               </Pressable>
@@ -432,6 +293,15 @@ export default function CheckoutScreen() {
           </View>
         )}
       </View>
+
+      {processingPayment && (
+        <View style={{ marginTop: 12 }}>
+          <ActivityIndicator />
+          <Text style={{ textAlign: "center", marginTop: 8 }}>
+            Processing payment & saving order...
+          </Text>
+        </View>
+      )}
     </ScrollView>
   );
 }

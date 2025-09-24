@@ -50,24 +50,25 @@ export type Product = {
 export const PRODUCTS: Product[] = [
   {
     id: "1",
-    name: "Lavender Bliss",
-    desc: "Relaxing lavender scent.",
+    name: "PUMPKIN SPICE",
+    desc: "WOODY AND SPICY SMELL.",
     price: 20,
-    img: "https://lh3.googleusercontent.com/aida-public/AB6AXuCzla8aEtRJmZqe02bU6alEfwxbnq4pVs48lJ429Wi9NNomixtBXsdCtH5mjAht4kxG6HsD_SlZuoKo2Vv7_0MA_oGIAUdb_5RrNH0a1fyagUfj9UaAo68wAU9lltXfO5Uyls4EsoQ7K4-mUEtqtSfEguSfdPofQgCWjtbCanM9wlXvQHvhnzQTxlx4ea7FsskSgVNVty-lggCLMMfSomClJmUj9-yqtdDpvQtBhykAgCULX7QvB1sW4IgP7PsbpvSZS9YvpAisKrQ",
+    //img: "https://lh3.googleusercontent.com/aida-public/AB6AXuCzla8aEtRJmZqe02bU6alEfwxbnq4pVs48lJ429Wi9NNomixtBXsdCtH5mjAht4kxG6HsD_SlZuoKo2Vv7_0MA_oGIAUdb_5RrNH0a1fyagUfj9UaAo68wAU9lltXfO5Uyls4EsoQ7K4-mUEtqtSfEguSfdPofQgCWjtbCanM9wlXvQHvhnzQTxlx4ea7FsskSgVNVty-lggCLMMfSomClJmUj9-yqtdDpvQtBhykAgCULX7QvB1sW4IgP7PsbpvSZS9YvpAisKrQ",
+    img: "https://bybxickqlfiirrjkvuoq.supabase.co/storage/v1/object/sign/Product%20List/autumn_candle_website_optimized.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9hODJlNzVlZC1jMzk3LTRhZTYtODY3YS1jNDRjYmVkOGI5MmIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJQcm9kdWN0IExpc3QvYXV0dW1uX2NhbmRsZV93ZWJzaXRlX29wdGltaXplZC5qcGciLCJpYXQiOjE3NTg0NTU2MDUsImV4cCI6MjA3MzgxNTYwNX0.EsmvdJ51KxLcjsfmZkElqk7UVbH05jbcm4r0EAlqWic",
   },
   {
     id: "2",
-    name: "Citrus Burst",
-    desc: "Fresh citrus aroma.",
+    name: "FLOATING CANDLES WITH FLOWERS",
+    desc: "FLOATING CANDLES TO TAKE YOUR DECORATIONS TO NEXT LEVEL.",
     price: 25,
-    img: "https://lh3.googleusercontent.com/aida-public/AB6AXuBsLjb5KKBppIDmg1chVvAKnP7LCwdw8mdW-cbHSDFrkJ1kEybpB41dL614HNDfc4I8nC5HMUapL3_yldQFi38W8lf41TXzF3N-dRRZnKYrrhw23RYyve-glEUpEcyKjoyNceRf6_zhvxgwuFERsyf4q-sp87CRe6tB1DEtxEm6_SZWTZ6chkdWjlOgxVsHEq7d8iI-B8_maG7vHXLggcLwqKQRApUTZyAIjDXIzrWYgtfPCHCYHgaOy-0lJx8sMwkgvUgsM0Mu90U",
+    img: "https://bybxickqlfiirrjkvuoq.supabase.co/storage/v1/object/sign/Product%20List/hd_floating_candles_with_flowers.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9hODJlNzVlZC1jMzk3LTRhZTYtODY3YS1jNDRjYmVkOGI5MmIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJQcm9kdWN0IExpc3QvaGRfZmxvYXRpbmdfY2FuZGxlc193aXRoX2Zsb3dlcnMuanBnIiwiaWF0IjoxNzU4NDU3MjM0LCJleHAiOjIwNzM4MTcyMzR9.IsOOQMKCBUlet9Nu6HrgUwJbCvBB78avwRuZ5Kl32es",
   },
   {
     id: "3",
-    name: "Vanilla Dream",
-    desc: "Sweet vanilla fragrance.",
+    name: "BOQUET FLOWER CANDLE",
+    desc: "FLOWERS BOUQUETS WITH YOUR FAVOURITE FRAGNANCE.",
     price: 32,
-    img: "https://lh3.googleusercontent.com/aida-public/AB6AXuDkeQHD-nW4Y5OPL0yXw0JHgADOK9ZbDUiCVnyjazzkmQJTtml03JuH5OgUaH_y4xug1Piufv8Z6Och6qiOid4UcO3kfO2uaU2qpv0hfgsNoNjk2Ul2RZOQyao8vq8zR0f3eQcSe85S-Jbd5vHbsF7RBLJGdmbq7YC2qlyG70XcDa64Cf3-Ud8AgtiCQWfM5a5WihwjPwrXA_VIN1zMwzbAE2tY_VpZs2-LnOsOjXt7VE7D_TOTefHHGA12DfYMCmcXzSKHnGPaRos",
+    img: "https://bybxickqlfiirrjkvuoq.supabase.co/storage/v1/object/sign/Product%20List/decorative_candle_bouquet_collection.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9hODJlNzVlZC1jMzk3LTRhZTYtODY3YS1jNDRjYmVkOGI5MmIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJQcm9kdWN0IExpc3QvZGVjb3JhdGl2ZV9jYW5kbGVfYm91cXVldF9jb2xsZWN0aW9uLmpwZyIsImlhdCI6MTc1ODQ1NjY0MiwiZXhwIjoyMDczODE2NjQyfQ.bkNcGJHklA1-EaZCApSmCgO4Ws7IkBhdZMrsR1SbAAo",
   },
 ];
 

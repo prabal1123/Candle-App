@@ -7,24 +7,18 @@ import {
   Pressable,
   ImageBackground,
   Image,
-  Dimensions,
 } from "react-native";
 import { Stack, Link } from "expo-router";
-import { Theme } from "@/styles/theme";
-// relative import (your styles file)
 import { aboutStyles as styles } from "../styles/aboutStyles";
 
-// Local assets (relative to app/about.tsx)
-// Put your images at these paths (or update paths below to match your project)
-const imgStory = require("../assets/images/candles/our_story.jpg"); // Our Story
-const imgMission = require("../assets/images/candles/our_products.jpg"); // Our Mission
-const imgValues = require("../assets/images/candles/our_values.jpeg"); // Our Values
+// Local assets
+const imgStory = require("../assets/images/our_story1.jpg");
+const imgMission = require("../assets/images/candles/our_products.jpg");
+const imgValues = require("../assets/images/candles/our_values.jpeg");
 
-// Team images (two separate files)
 const teamSarahImg = require("../assets/images/team/product4.png");
 const teamMarkImg = require("../assets/images/team/product4.png");
 
-// TEAM data (uses two separate images)
 const TEAM = [
   { name: "Sarah", role: "Co-Founder & Creative Director", img: teamSarahImg },
   { name: "Mark", role: "Co-Founder & Operations Manager", img: teamMarkImg },
@@ -33,52 +27,8 @@ const TEAM = [
 export default function About(): JSX.Element {
   return (
     <ScrollView contentContainerStyle={styles.page}>
+      {/* set page title in the native stack header (your layout provides the global navbar) */}
       <Stack.Screen options={{ title: "About Candle Co" }} />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <View style={styles.logoBox} accessibilityElementsHidden>
-            {/* Simple square logo placeholder */}
-            <View style={styles.logoSquare} />
-          </View>
-          <Text style={styles.brandTitle}>Candle Co</Text>
-        </View>
-
-        <View style={styles.headerRight}>
-          <View style={styles.navLinks}>
-            <Link href="/" asChild>
-              <Pressable style={styles.navItem}>
-                <Text style={styles.navText}>Shop</Text>
-              </Pressable>
-            </Link>
-            <Link href="/about" asChild>
-              <Pressable style={styles.navItem}>
-                <Text style={styles.navText}>About</Text>
-              </Pressable>
-            </Link>
-            <Link href="/contact" asChild>
-              <Pressable style={styles.navItem}>
-                <Text style={styles.navText}>Contact</Text>
-              </Pressable>
-            </Link>
-          </View>
-
-          <View style={styles.iconButtons}>
-            <Pressable style={styles.iconButton} accessibilityLabel="Search">
-              <Text style={styles.iconLabel}>🔍</Text>
-            </Pressable>
-            <Pressable style={styles.iconButton} accessibilityLabel="Account">
-              <Text style={styles.iconLabel}>👤</Text>
-            </Pressable>
-            <Link href="/cart" asChild>
-              <Pressable style={styles.iconButton} accessibilityLabel="Cart">
-                <Text style={styles.iconLabel}>🛍️</Text>
-              </Pressable>
-            </Link>
-          </View>
-        </View>
-      </View>
 
       {/* Content */}
       <View style={styles.contentWrap}>

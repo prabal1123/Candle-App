@@ -14,7 +14,7 @@ export default function CheckoutWebView({ amountInPaise = 10000, onSuccess }: an
         const res = await fetch(createUrl('/create-order'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: amountInPaise })
+          body: JSON.stringify({ amount: amountInPaise, order: localOrder })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Create order failed');

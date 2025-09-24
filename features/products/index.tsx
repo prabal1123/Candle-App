@@ -1,14 +1,6 @@
 // app/product/index.tsx
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  Image,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-  useWindowDimensions,
-} from "react-native";
+import { View, Text, Image, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { Link } from "expo-router";
 import { productListStyles as styles } from "@/styles/productList";
 import { getProducts, Product } from "@/features/products/api";
@@ -19,21 +11,6 @@ export default function ProductListPage() {
   const pageSize = 9;
   const [total, setTotal] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
-
-  const { width: screenWidth } = useWindowDimensions();
-
-  // determine columns based on screen width
-  const columns = (() => {
-    if (screenWidth <= 420) return 2; // mobile: 2 columns (wider cards)
-    if (screenWidth <= 900) return 3; // tablet: 3 columns
-    return 4; // desktop: 4 columns
-  })();
-
-  // computed column width (accounting for horizontal padding in styles.root and card padding)
-  // styles.root paddingHorizontal default is 28; we use the same math for consistency
-  const horizontalPadding = 28 * 2; // left + right from root
-  const gapBetween = 12; // approximate padding between cards (productListStyles.padding used)
-  const columnWidth = Math.floor((screenWidth - horizontalPadding - gapBetween * (columns - 1)) / columns);
 
   async function load() {
     setLoading(true);
@@ -53,6 +30,7 @@ export default function ProductListPage() {
   }, [page]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  
 
   if (loading) {
     return (
@@ -69,32 +47,16 @@ export default function ProductListPage() {
 
       <View style={styles.gridColWrapper}>
         {products.map((p) => (
-          <View
-            key={p.id}
-            // use computed width so layout is precise on mobile web and native
-            style={[
-              { width: columnWidth, padding: 6 },
-              // small alignment fix for last column
-            ]}
-          >
+          <View key={p.id} style={styles.col3}>
             <Link href={`/product/${p.id}`} asChild>
               <Pressable style={styles.productCard}>
                 <Image
-                  source={p.image_urls?.[0]?.url ? { uri: p.image_urls[0].url } : require("../../assets/images/logo.png")}
-                  // dynamic image size: keep a consistent card height on mobile
-                  style={[
-                    styles.productImage,
-                    screenWidth <= 420 ? { height: 140 } : { height: 180 },
-                  ]}
+                  source={{ uri: p.image_urls?.[0]?.url ?? undefined }}
+                  style={styles.productImage}
+                  // onError fallback handled by RN, you can add placeholder logic if needed
                 />
                 <View style={styles.productInfo}>
-                  <Text
-                    style={styles.productTitle}
-                    numberOfLines={2}
-                    ellipsizeMode="tail"
-                  >
-                    {p.name}
-                  </Text>
+                  <Text style={styles.productTitle}>{p.name}</Text>
                   <Text style={styles.productPrice}>₹{((p.price_cents ?? 0) / 100).toFixed(2)}</Text>
                 </View>
               </Pressable>
@@ -121,6 +83,3 @@ export default function ProductListPage() {
     </ScrollView>
   );
 }
-
-
-

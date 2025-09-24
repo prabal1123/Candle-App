@@ -60,10 +60,20 @@ export const productListStyles = StyleSheet.create({
     }),
   },
 
+  // IMPORTANT: web needs a numeric height or aspectRatio — we provide a default numeric height
+  // and expose a small override for narrow screens.
   productImage: {
     width: "100%",
-    aspectRatio: 1, // square thumbnails similar to your screenshot
-    resizeMode: "cover",
+    height: 180,          // numeric height keeps image visible on web and native
+    borderRadius: 8,
+    backgroundColor: "#eee",
+    // avoid putting resizeMode here as a style (use prop on <Image>), but keep it if needed:
+    // resizeMode: "cover",
+  },
+
+  // smaller card height for mobile narrow screens (apply conditionally in component)
+  productImageSmall: {
+    height: 140,
   },
 
   productInfo: {
@@ -96,3 +106,5 @@ export const productListStyles = StyleSheet.create({
     backgroundColor: "#f4f2f0",
   },
 });
+
+export default productListStyles;

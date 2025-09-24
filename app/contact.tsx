@@ -11,15 +11,13 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
-import { Stack, Link } from "expo-router";
+import { Stack } from "expo-router";
 import { contactStyles as styles } from "../styles/contactStyles"; // <-- separate styles file
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// <-- Local image import (relative to this file)
-///Users/prabalsingh/Documents/Projects/Candle-Co/candle-app/assets/images/hero.jpg
+// Local hero image
 const heroImg = require("../assets/images/hero.jpg");
-// If you prefer a different path/name, update the path above.
 
 export default function Contact(): JSX.Element {
   const [name, setName] = useState("");
@@ -32,46 +30,8 @@ export default function Contact(): JSX.Element {
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      {/* Let the global navbar from your layout handle navigation */}
       <Stack.Screen options={{ title: "Contact Candle Co" }} />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <View style={styles.logoBox} accessibilityElementsHidden>
-            <View style={styles.logoSquare} />
-          </View>
-          <Text style={styles.brandTitle}>Candle Co.</Text>
-        </View>
-
-        <View style={styles.headerRight}>
-          <View style={styles.navLinks}>
-            <Link href="/" asChild>
-              <Pressable style={styles.navItem}>
-                <Text style={styles.navText}>Shop</Text>
-              </Pressable>
-            </Link>
-            <Link href="/about" asChild>
-              <Pressable style={styles.navItem}>
-                <Text style={styles.navText}>About</Text>
-              </Pressable>
-            </Link>
-            <Link href="/contact" asChild>
-              <Pressable style={styles.navItem}>
-                <Text style={styles.navText}>Contact</Text>
-              </Pressable>
-            </Link>
-          </View>
-
-          <View style={styles.iconButtons}>
-            <Pressable style={styles.iconButton} accessibilityLabel="Search">
-              <Text style={styles.iconLabel}>🔍</Text>
-            </Pressable>
-            <Pressable style={styles.iconButton} accessibilityLabel="Cart">
-              <Text style={styles.iconLabel}>🛍️</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
 
       {/* Content */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -150,7 +110,7 @@ export default function Contact(): JSX.Element {
           <Text style={styles.paragraph}>Phone: (555) 123-4567</Text>
           <Text style={styles.paragraph}>Address: 123 Main Street, Anytown, USA</Text>
 
-          {/* Bottom hero image — now using the local image */}
+          {/* Bottom hero image */}
           <View style={styles.heroWrap}>
             <ImageBackground
               source={heroImg}

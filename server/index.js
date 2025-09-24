@@ -1,240 +1,835 @@
+// // server/index.js
+// //
+// // - Loads .env from multiple common locations so dev setups are forgiving.
+// // - Provides /create-order, /verify-payment, and tolerant GET /order/:id and /order/:orderNumber endpoints.
+// // - Uses Supabase SERVICE_ROLE_KEY on the backend (KEEP THIS SECRET).
+// //
+// // Install:
+// //   npm install express cors dotenv @supabase/supabase-js razorpay node-fetch
+// //
+// // Example .env (server/.env or repo .env):
+// //   PORT=4242
+// //   FRONTEND_ORIGIN=http://localhost:19006
+// //   RAZORPAY_KEY_ID=rzp_test_xxx
+// //   RAZORPAY_KEY_SECRET=yyy
+// //   SUPABASE_URL=https://your-project.supabase.co
+// //   SUPABASE_SERVICE_ROLE_KEY=service_role_xxx
+// //
+
+// const path = require('path')
+// const fs = require('fs')
+
+// // Load dotenv from multiple places (server/.env, repo root .env, ../.env)
+// const dotenv = require('dotenv')
+// const envPathsTried = []
+// function tryLoadEnv(envPath) {
+//   try {
+//     const resolved = path.resolve(envPath)
+//     envPathsTried.push(resolved)
+//     if (fs.existsSync(resolved)) {
+//       dotenv.config({ path: resolved })
+//       console.log('Loaded env from', resolved)
+//       return true
+//     }
+//   } catch (e) {
+//     // ignore
+//   }
+//   return false
+// }
+
+// tryLoadEnv(path.join(__dirname, '.env')) ||
+//   tryLoadEnv(path.join(__dirname, '..', '.env')) ||
+//   tryLoadEnv(path.join(process.cwd(), '.env'))
+
+// console.log('Env paths tried:', envPathsTried.join(', '))
+
+// const express = require('express')
+// const Razorpay = require('razorpay')
+// const crypto = require('crypto')
+// const cors = require('cors')
+// const fetch = require('node-fetch') // optional, keep if you need server-side fetch
+// const { createClient } = require('@supabase/supabase-js')
+
+// const app = express()
+// app.use(cors({ origin: process.env.FRONTEND_ORIGIN || '*' }))
+// app.use(express.json({ limit: '1mb' }))
+
+// // --- Env checks ---
+// const {
+//   PORT = 4242,
+//   RAZORPAY_KEY_ID,
+//   RAZORPAY_KEY_SECRET,
+//   SUPABASE_URL,
+//   SUPABASE_SERVICE_ROLE_KEY
+// } = process.env
+
+// if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+//   console.error('Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET in env')
+//   process.exit(1)
+// }
+// if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+//   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in env')
+//   process.exit(1)
+// }
+
+// // Init clients
+// const razorpay = new Razorpay({
+//   key_id: RAZORPAY_KEY_ID,
+//   key_secret: RAZORPAY_KEY_SECRET
+// })
+
+// const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+//   auth: { persistSession: false }
+// })
+
+// // Helper: safe log
+// function safeLog(...args) {
+//   try {
+//     console.log(...args)
+//   } catch (e) {}
+// }
+
+// // Helper: lookup order by id (UUID) or order_number
+// async function lookupOrder(orderKey) {
+//   // Try by id (UUID)
+//   const byId = await supabase
+//     .from('orders')
+//     .select('*')
+//     .eq('id', orderKey)
+//     .maybeSingle()
+
+//   if (byId.error) {
+//     return { error: byId.error }
+//   }
+//   if (byId.data) return { data: byId.data }
+
+//   // Try by order_number
+//   const byNumber = await supabase
+//     .from('orders')
+//     .select('*')
+//     .eq('order_number', orderKey)
+//     .maybeSingle()
+
+//   if (byNumber.error) return { error: byNumber.error }
+//   if (byNumber.data) return { data: byNumber.data }
+
+//   return { data: null }
+// }
+
+// // --- POST /create-order ---
+// // Creates a Razorpay order and returns order id & metadata for client
+// app.post('/create-order', async (req, res) => {
+//   try {
+//     const { amount, currency = 'INR', receipt, notes = {}, raw_payload = {} } = req.body
+
+//     if (!amount || !receipt) {
+//       return res.status(400).json({ ok: false, error: 'Missing amount or receipt' })
+//     }
+
+//     // Razorpay expects integer amount in paise (e.g. Rs 100 => 10000)
+//     const orderOptions = {
+//       amount: Number(amount),
+//       currency,
+//       receipt,
+//       notes
+//     }
+
+//     safeLog('Creating razorpay order', orderOptions)
+
+//     const razorpayOrder = await razorpay.orders.create(orderOptions)
+
+//     safeLog('Razorpay order created', razorpayOrder)
+
+//     return res.json({
+//       ok: true,
+//       id: razorpayOrder.id,
+//       amount: razorpayOrder.amount,
+//       currency: razorpayOrder.currency,
+//       key_id: RAZORPAY_KEY_ID,
+//       receipt,
+//       raw_payload_received: raw_payload
+//     })
+//   } catch (err) {
+//     console.error('/create-order error', err)
+//     return res.status(500).json({ ok: false, error: err.message || String(err) })
+//   }
+// })
+
+// // --- POST /verify-payment ---
+// // Verifies razorpay signature, inserts order record into Supabase
+// app.post('/verify-payment', async (req, res) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       local_receipt,
+//       raw_payload = {}
+//     } = req.body
+
+//     safeLog('verify-payment called', {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       local_receipt
+//     })
+
+//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+//       return res.status(400).json({ ok: false, error: 'Missing razorpay fields' })
+//     }
+
+//     // Verify signature
+//     const expected = crypto
+//       .createHmac('sha256', RAZORPAY_KEY_SECRET)
+//       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+//       .digest('hex')
+
+//     if (expected !== razorpay_signature) {
+//       console.error('Invalid signature', { expected, received: razorpay_signature })
+//       return res.status(400).json({ ok: false, error: 'Invalid signature' })
+//     }
+
+//     // === Normalization: accept camelCase or snake_case and nested customer fields ===
+//     // user id: allow raw_payload.userId or raw_payload.user_id
+//     const normalizedUserId = raw_payload.user_id || raw_payload.userId || null
+
+//     // order number / receipt: prefer explicit local_receipt, then raw_payload.receipt or client reference
+//     const normalizedOrderNumber = local_receipt || raw_payload.receipt || raw_payload.clientReference || null
+
+//     // shipping address: nested customer.address OR raw_payload.shipping_address OR raw_payload.address
+//     const normalizedShippingAddress =
+//       (raw_payload.customer && raw_payload.customer.address) ||
+//       raw_payload.shipping_address ||
+//       raw_payload.address ||
+//       null
+
+//     // customer name: nested or flat
+//     const normalizedCustomerName =
+//       (raw_payload.customer && raw_payload.customer.name) ||
+//       raw_payload.customer_name ||
+//       raw_payload.customerName ||
+//       null
+
+//     // phone: nested or flat
+//     const normalizedPhone =
+//       (raw_payload.customer && raw_payload.customer.phone) ||
+//       raw_payload.phone ||
+//       raw_payload.customer_phone ||
+//       null
+
+//     // items: accept raw_payload.items (array) or raw_payload.orderItems or itemsJson
+//     const normalizedItems = raw_payload.items || raw_payload.orderItems || raw_payload.itemsJson || null
+
+//     // currency: default INR
+//     const normalizedCurrency = raw_payload.currency || 'INR'
+
+//     // notes: keep if present
+//     const normalizedNotes = raw_payload.notes ?? null
+
+//     // Status default
+//     const normalizedStatus = raw_payload.status || 'paid'
+
+//     // Money normalization:
+//     // - If raw_payload.amount exists, assume it's in paise (like Razorpay)
+//     // - Else if raw_payload.total_cents exists, use it
+//     // - Else if raw_payload.total or raw_payload.subtotal exists (likely in rupees), convert to paise
+//     let total_cents = null
+//     let amount = null
+
+//     if (raw_payload.amount != null) {
+//       // assume already paise
+//       total_cents = Math.round(Number(raw_payload.amount))
+//       amount = Math.round(Number(total_cents) / 100)
+//     } else if (raw_payload.total_cents != null) {
+//       total_cents = Math.round(Number(raw_payload.total_cents))
+//       amount = Math.round(Number(total_cents) / 100)
+//     } else if (raw_payload.total != null) {
+//       // frontend likely sends total in rupees (e.g. 90.0)
+//       total_cents = Math.round(Number(raw_payload.total) * 100)
+//       amount = Math.round(Number(raw_payload.total))
+//     } else if (raw_payload.subtotal != null) {
+//       total_cents = Math.round(Number(raw_payload.subtotal) * 100)
+//       amount = Math.round(Number(raw_payload.subtotal))
+//     } else if (raw_payload.totalPaise != null) {
+//       total_cents = Math.round(Number(raw_payload.totalPaise))
+//       amount = Math.round(Number(total_cents) / 100)
+//     }
+
+//     // Build order payload for DB insert (normalized keys matching your DB)
+//     const orderPayload = {
+//       user_id: normalizedUserId,
+//       order_number: normalizedOrderNumber,
+//       status: normalizedStatus,
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       ...(normalizedNotes ? { notes: normalizedNotes } : {}),
+//       currency: normalizedCurrency,
+//       shipping_address: normalizedShippingAddress,
+//       estimated_delivery: raw_payload.estimated_delivery || null,
+//       items: normalizedItems ?? null,
+//       customer_name: normalizedCustomerName,
+//       phone: normalizedPhone
+//     }
+
+//     if (total_cents != null) {
+//       orderPayload.total_cents = Number(total_cents)
+//       orderPayload.amount = Number(amount)
+//     }
+
+//     // money fallback: if front-end used unit prices & didn't send total, try computing from items
+//     if ((orderPayload.total_cents == null) && Array.isArray(normalizedItems) && normalizedItems.length > 0) {
+//       try {
+//         const computedPaise = normalizedItems.reduce((acc, it) => {
+//           // accept various item shapes
+//           const qty = Number(it.qty ?? it.quantity ?? it.qty ?? 1)
+//           const price = Number(it.price ?? it.unit_price ?? it.unit_price_cents ?? 0)
+//           // if price looks like paise (large) and > 1000 assume paise; else rupees
+//           if (price > 1000) {
+//             // assume paise
+//             return acc + qty * Math.round(price)
+//           } else {
+//             // assume rupees
+//             return acc + qty * Math.round(price * 100)
+//           }
+//         }, 0)
+//         if (computedPaise > 0) {
+//           orderPayload.total_cents = computedPaise
+//           orderPayload.amount = Math.round(computedPaise / 100)
+//         }
+//       } catch (e) {
+//         // ignore compute errors
+//       }
+//     }
+
+//     safeLog('Raw payload:', raw_payload)
+//     safeLog('Normalized orderPayload for insert:', orderPayload)
+
+//     // remove undefined keys
+//     Object.keys(orderPayload).forEach(k => {
+//       if (orderPayload[k] === undefined) delete orderPayload[k]
+//     })
+
+//     const insertResponse = await supabase
+//       .from('orders')
+//       .insert([orderPayload])
+//       .select('id, order_number')
+//       .maybeSingle()
+
+//     safeLog('Supabase insert response', insertResponse)
+
+//     if (insertResponse.error) {
+//       const err = insertResponse.error
+//       console.error('Supabase insert error', err)
+
+//       const msg = err.message || String(err)
+//       // Handle unique/duplicate gracefully by returning existing row if possible
+//       if (/duplicate key|unique constraint|already exists/i.test(msg) && orderPayload.order_number) {
+//         safeLog('Unique conflict detected. Fetching existing row by order_number')
+//         const getExisting = await supabase
+//           .from('orders')
+//           .select('id, order_number')
+//           .eq('order_number', orderPayload.order_number)
+//           .maybeSingle()
+//         if (getExisting.data?.id) {
+//           safeLog('Returning existing row on conflict', getExisting.data)
+//           return res.json({ ok: true, orderId: getExisting.data.id, note: 'returned existing on conflict' })
+//         }
+//       }
+//       return res.status(500).json({ ok: false, error: msg })
+//     }
+
+//     const insertedRow = insertResponse.data
+
+//     if (!insertedRow || !insertedRow.id) {
+//       return res.status(500).json({ ok: false, error: 'Inserted but could not determine id' })
+//     }
+
+//     safeLog('Order inserted successfully, id:', insertedRow.id)
+
+//     return res.json({
+//       ok: true,
+//       orderId: insertedRow.id,
+//       order_number: insertedRow.order_number
+//     })
+//   } catch (err) {
+//     console.error('verify-payment unexpected error', err)
+//     return res.status(500).json({ ok: false, error: err.message || String(err) })
+//   }
+// })
+
+// // --- GET /order/:id (alias) ---
+// // Accept both /order/:id and /order/:orderNumber to be tolerant of client requests
+// app.get('/order/:id', async (req, res) => {
+//   try {
+//     const { id } = req.params
+//     safeLog('GET /order/:id ->', id)
+//     if (!id) return res.status(400).json({ ok: false, error: 'Missing id' })
+
+//     const result = await lookupOrder(id)
+//     if (result.error) {
+//       console.error('Order lookup error', result.error)
+//       return res.status(500).json({ ok: false, error: result.error.message || String(result.error) })
+//     }
+//     if (!result.data) return res.status(404).json({ ok: false, error: 'Order not found' })
+//     return res.json({ ok: true, order: result.data })
+//   } catch (err) {
+//     console.error('GET /order/:id unexpected error', err)
+//     return res.status(500).json({ ok: false, error: err.message || String(err) })
+//   }
+// })
+
+// // --- GET /order-by-number/:orderNumber (explicit) ---
+// app.get('/order-by-number/:orderNumber', async (req, res) => {
+//   try {
+//     const { orderNumber } = req.params
+//     safeLog('GET /order-by-number/:orderNumber ->', orderNumber)
+//     if (!orderNumber) return res.status(400).json({ ok: false, error: 'Missing order number' })
+
+//     const result = await lookupOrder(orderNumber)
+//     if (result.error) {
+//       console.error('Order lookup error', result.error)
+//       return res.status(500).json({ ok: false, error: result.error.message || String(result.error) })
+//     }
+//     if (!result.data) return res.status(404).json({ ok: false, error: 'Order not found' })
+//     return res.json({ ok: true, order: result.data })
+//   } catch (err) {
+//     console.error('GET /order-by-number unexpected error', err)
+//     return res.status(500).json({ ok: false, error: err.message || String(err) })
+//   }
+// })
+
+// // Basic health
+// app.get('/', (req, res) => res.send('OK'))
+
+// // Start
+// app.listen(PORT, () => {
+//   console.log(`Server listening on port ${PORT}`)
+// })
+
+
+
+
+
+
+
+
+
 // server/index.js
-require('dotenv').config();
-const express = require('express');
-const Razorpay = require('razorpay');
-const crypto = require('crypto');
-const cors = require('cors');
-const fetch = require('node-fetch'); // v2 style
+//
+// - Loads .env from multiple common locations so dev setups are forgiving.
+// - Provides /create-order, /verify-payment, and tolerant GET /order/:id and /order/:orderNumber endpoints.
+// - Uses Supabase SERVICE_ROLE_KEY on the backend (KEEP THIS SECRET).
+//
+// Install:
+//   npm install express cors dotenv @supabase/supabase-js razorpay node-fetch
+//
+// Example .env (server/.env or repo .env):
+//   PORT=4242
+//   FRONTEND_ORIGIN=http://localhost:19006
+//   RAZORPAY_KEY_ID=rzp_test_xxx
+//   RAZORPAY_KEY_SECRET=yyy
+//   SUPABASE_URL=https://your-project.supabase.co
+//   SUPABASE_SERVICE_ROLE_KEY=service_role_xxx
+//
 
-const app = express();
+const path = require('path')
+const fs = require('fs')
 
-// CORS - allow your frontend
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:8081' }));
+// Load dotenv from multiple places (server/.env, repo root .env, ../.env)
+const dotenv = require('dotenv')
+const envPathsTried = []
+function tryLoadEnv(envPath) {
+  try {
+    const resolved = path.resolve(envPath)
+    envPathsTried.push(resolved)
+    if (fs.existsSync(resolved)) {
+      dotenv.config({ path: resolved })
+      console.log('Loaded env from', resolved)
+      return true
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false
+}
 
-// NOTE: we'll use express.json() for normal endpoints but register webhook with raw body
-app.use(express.json());
+tryLoadEnv(path.join(__dirname, '.env')) ||
+  tryLoadEnv(path.join(__dirname, '..', '.env')) ||
+  tryLoadEnv(path.join(process.cwd(), '.env'))
 
-// Env
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
-const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
+console.log('Env paths tried:', envPathsTried.join(', '))
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const express = require('express')
+const Razorpay = require('razorpay')
+const crypto = require('crypto')
+const cors = require('cors')
+const fetch = require('node-fetch') // optional, keep if you need server-side fetch
+const { createClient } = require('@supabase/supabase-js')
+
+const app = express()
+app.use(cors({ origin: process.env.FRONTEND_ORIGIN || '*' }))
+app.use(express.json({ limit: '1mb' }))
+
+// --- Env checks ---
+const {
+  PORT = 4242,
+  RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY
+} = process.env
 
 if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-  console.warn('Warning: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set in env.');
+  console.error('Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET in env')
+  process.exit(1)
+}
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in env')
+  process.exit(1)
 }
 
+// Init clients
 const razorpay = new Razorpay({
   key_id: RAZORPAY_KEY_ID,
-  key_secret: RAZORPAY_KEY_SECRET,
-});
+  key_secret: RAZORPAY_KEY_SECRET
+})
 
-/**
- * updateOrderStatus - placeholder DB update.
- * If you have Supabase service role key, this will PATCH the `orders` table where receipt = localReceipt.
- * Otherwise it just logs.
- */
-async function updateOrderStatus(localReceipt, status, extra = {}) {
-  console.log('[updateOrderStatus]', localReceipt, status, extra);
-  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-    try {
-      const url = `${SUPABASE_URL}/rest/v1/orders?receipt=eq.${encodeURIComponent(localReceipt)}`;
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({ status, updated_at: new Date().toISOString(), ...extra }),
-      });
-      console.log('[Supabase] update status response', res.status);
-    } catch (err) {
-      console.warn('[Supabase] update failed', err);
-    }
-  }
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false }
+})
+
+// Helper: safe log
+function safeLog(...args) {
+  try {
+    console.log(...args)
+  } catch (e) {}
 }
 
-/**
- * /place-order
- * - Expects JSON payload: { order: { id, userId, items, subtotal, shipping, total, customer, createdAt } }
- * - Creates (optionally persists) the order server-side, creates a Razorpay order, and returns the razorpay order details.
- *
- * NOTE: This endpoint both persists your order (if SUPABASE env set) and creates the razorpay order in one go.
- */
-app.post('/place-order', async (req, res) => {
-  try {
-    const { order } = req.body || {};
-    if (!order || !order.id || !order.total) {
-      return res.status(400).json({ error: 'order with id and total required' });
-    }
+// Helper: lookup order by id (UUID) or order_number
+async function lookupOrder(orderKey) {
+  // Try by id (UUID)
+  const byId = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', orderKey)
+    .maybeSingle()
 
-    // Persist order to DB (optional)
-    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-      try {
-        const url = `${SUPABASE_URL}/rest/v1/orders`;
-        // insert a record (upsert or insert as needed)
-        const insertRes = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE_KEY,
-            authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify([{ receipt: order.id, user_id: order.userId, items: order.items, subtotal: order.subtotal, shipping: order.shipping, total: order.total, customer: order.customer, status: 'created', created_at: order.createdAt }]),
-        });
-        console.log('[Supabase] order insert status', insertRes.status);
-      } catch (err) {
-        console.warn('[Supabase] insert order failed', err);
-      }
-    } else {
-      console.log('[Server] skipping DB persist (no SUPABASE env)');
-    }
-
-    // Create Razorpay order
-    const amountPaise = Math.round(order.total * 100); // convert INR -> paise
-    const options = {
-      amount: amountPaise,
-      currency: 'INR',
-      receipt: order.id,
-      payment_capture: 1,
-      notes: { receipt: order.id },
-    };
-
-    const razorpayOrder = await razorpay.orders.create(options);
-    // Save razorpay order id mapping via updateOrderStatus
-    await updateOrderStatus(order.id, 'razorpay_created', { razorpay_order_id: razorpayOrder.id });
-
-    return res.json({ razorpayOrder });
-  } catch (err) {
-    console.error('/place-order error', err);
-    return res.status(500).json({ error: 'place-order failed', details: String(err) });
+  if (byId.error) {
+    return { error: byId.error }
   }
-});
+  if (byId.data) return { data: byId.data }
 
-/**
- * /verify-payment - called by frontend handler after Razorpay checkout returns payment info
- * Expects: { razorpay_order_id, razorpay_payment_id, razorpay_signature, local_receipt }
- */
+  // Try by order_number
+  const byNumber = await supabase
+    .from('orders')
+    .select('*')
+    .eq('order_number', orderKey)
+    .maybeSingle()
+
+  if (byNumber.error) return { error: byNumber.error }
+  if (byNumber.data) return { data: byNumber.data }
+
+  return { data: null }
+}
+
+// --- POST /create-order ---
+// Creates a Razorpay order and returns order id & metadata for client
+app.post('/create-order', async (req, res) => {
+  try {
+    const { amount, currency = 'INR', receipt, notes = {}, raw_payload = {} } = req.body
+
+    if (!amount || !receipt) {
+      return res.status(400).json({ ok: false, error: 'Missing amount or receipt' })
+    }
+
+    // Razorpay expects integer amount in paise (e.g. Rs 100 => 10000)
+    const orderOptions = {
+      amount: Number(amount),
+      currency,
+      receipt,
+      notes
+    }
+
+    safeLog('Creating razorpay order', orderOptions)
+
+    const razorpayOrder = await razorpay.orders.create(orderOptions)
+
+    safeLog('Razorpay order created', razorpayOrder)
+
+    return res.json({
+      ok: true,
+      id: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      key_id: RAZORPAY_KEY_ID,
+      receipt,
+      raw_payload_received: raw_payload
+    })
+  } catch (err) {
+    console.error('/create-order error', err)
+    return res.status(500).json({ ok: false, error: err.message || String(err) })
+  }
+})
+
+// --- POST /verify-payment ---
+// Verifies razorpay signature, inserts order record into Supabase
 app.post('/verify-payment', async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, local_receipt } = req.body || {};
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      local_receipt,
+      raw_payload = {}
+    } = req.body
+
+    safeLog('verify-payment called', {
+      razorpay_order_id,
+      razorpay_payment_id,
+      local_receipt
+    })
+
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ verified: false, reason: 'missing fields' });
+      return res.status(400).json({ ok: false, error: 'Missing razorpay fields' })
     }
 
-    const generated = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(`${razorpay_order_id}|${razorpay_payment_id}`).digest('hex');
+    // Verify signature
+    const expected = crypto
+      .createHmac('sha256', RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex')
 
-    // constant-time comparison
-    const genBuf = Buffer.from(generated, 'hex');
-    let sigBuf;
-    try {
-      sigBuf = Buffer.from(razorpay_signature, 'hex');
-    } catch (e) {
-      // if signature isn't hex or invalid, fail
-      return res.status(400).json({ verified: false, reason: 'invalid_signature_format' });
+    if (expected !== razorpay_signature) {
+      console.error('Invalid signature', { expected, received: razorpay_signature })
+      return res.status(400).json({ ok: false, error: 'Invalid signature' })
     }
 
-    let match = false;
-    try {
-      if (genBuf.length === sigBuf.length) match = crypto.timingSafeEqual(genBuf, sigBuf);
-    } catch (e) {
-      match = false;
+    // === Normalization: accept camelCase or snake_case and nested customer fields ===
+    // user id: allow raw_payload.userId or raw_payload.user_id
+    const normalizedUserId = raw_payload.user_id || raw_payload.userId || null
+
+    // order number / receipt: prefer explicit local_receipt, then raw_payload.receipt or client reference
+    const normalizedOrderNumber = local_receipt || raw_payload.receipt || raw_payload.clientReference || null
+
+    // shipping address: nested customer.address OR raw_payload.shipping_address OR raw_payload.address
+    const normalizedShippingAddress =
+      (raw_payload.customer && raw_payload.customer.address) ||
+      raw_payload.shipping_address ||
+      raw_payload.address ||
+      null
+
+    // customer name: nested or flat
+    const normalizedCustomerName =
+      (raw_payload.customer && raw_payload.customer.name) ||
+      raw_payload.customer_name ||
+      raw_payload.customerName ||
+      null
+
+    // phone: nested or flat
+    const normalizedPhone =
+      (raw_payload.customer && raw_payload.customer.phone) ||
+      raw_payload.phone ||
+      raw_payload.customer_phone ||
+      null
+
+    // items: accept raw_payload.items (array) or raw_payload.orderItems or itemsJson
+    const normalizedItems = raw_payload.items || raw_payload.orderItems || raw_payload.itemsJson || null
+
+    // currency: default INR
+    const normalizedCurrency = raw_payload.currency || 'INR'
+
+    // notes: keep if present (ensure object)
+    const normalizedNotes = (raw_payload.notes && typeof raw_payload.notes === 'object') ? raw_payload.notes : (raw_payload.notes ? { notes: raw_payload.notes } : null)
+
+    // Status default
+    const normalizedStatus = raw_payload.status || 'paid'
+
+    // Money normalization:
+    let total_cents = null
+    let amount = null
+
+    if (raw_payload.amount != null) {
+      // assume already paise
+      total_cents = Math.round(Number(raw_payload.amount))
+      amount = Math.round(Number(total_cents) / 100)
+    } else if (raw_payload.total_cents != null) {
+      total_cents = Math.round(Number(raw_payload.total_cents))
+      amount = Math.round(Number(total_cents) / 100)
+    } else if (raw_payload.total != null) {
+      // frontend likely sends total in rupees (e.g. 90.0)
+      total_cents = Math.round(Number(raw_payload.total) * 100)
+      amount = Math.round(Number(raw_payload.total))
+    } else if (raw_payload.subtotal != null) {
+      total_cents = Math.round(Number(raw_payload.subtotal) * 100)
+      amount = Math.round(Number(raw_payload.subtotal))
+    } else if (raw_payload.totalPaise != null) {
+      total_cents = Math.round(Number(raw_payload.totalPaise))
+      amount = Math.round(Number(total_cents) / 100)
     }
 
-    if (!match) {
-      console.warn('[verify-payment] signature mismatch', { generated, razorpay_signature });
-      return res.status(400).json({ verified: false, reason: 'signature_mismatch' });
+    // Build order payload for DB insert (normalized keys matching your DB)
+    const orderPayload = {
+      user_id: normalizedUserId,
+      order_number: normalizedOrderNumber,
+      status: normalizedStatus,
+      razorpay_order_id,
+      razorpay_payment_id,
+      currency: normalizedCurrency,
+      shipping_address: normalizedShippingAddress,
+      estimated_delivery: raw_payload.estimated_delivery || null,
+      items: normalizedItems ?? null,
+      customer_name: normalizedCustomerName,
+      // put phone top-level (recommended). If you don't have a phone column, it will be stored in notes below.
+      phone: normalizedPhone
     }
 
-    // signature matches; mark order as paid
-    await updateOrderStatus(local_receipt, 'paid', { razorpay_payment_id });
-
-    return res.json({ verified: true });
-  } catch (err) {
-    console.error('/verify-payment error', err);
-    return res.status(500).json({ verified: false, error: String(err) });
-  }
-});
-
-/**
- * /webhook - receives raw body and verifies signature via RAZORPAY_WEBHOOK_SECRET
- * IMPORTANT: configure this exact URL in Razorpay dashboard
- */
-app.post('/webhook', express.raw({ type: '*/*' }), async (req, res) => {
-  try {
-    const payloadRaw = req.body; // Buffer
-    const signature = req.headers['x-razorpay-signature'];
-
-    if (!RAZORPAY_WEBHOOK_SECRET) {
-      console.warn('No RAZORPAY_WEBHOOK_SECRET set in env');
-      return res.status(500).send('webhook secret not configured');
-    }
-
-    if (!signature) {
-      console.warn('No signature header on webhook');
-      return res.status(400).send('no signature');
-    }
-
-    const expected = crypto.createHmac('sha256', RAZORPAY_WEBHOOK_SECRET).update(payloadRaw).digest('hex');
-
-    // constant-time compare
-    const expBuf = Buffer.from(expected, 'hex');
-    let sigBuf;
-    try {
-      sigBuf = Buffer.from(signature, 'hex');
-    } catch (e) {
-      console.warn('signature header not hex');
-      return res.status(400).send('invalid signature format');
-    }
-
-    let ok = false;
-    try {
-      if (expBuf.length === sigBuf.length) ok = crypto.timingSafeEqual(expBuf, sigBuf);
-    } catch (e) {
-      ok = false;
-    }
-
-    if (!ok) {
-      console.warn('webhook signature mismatch', { expected, signature });
-      return res.status(400).send('signature mismatch');
-    }
-
-    // parse payload
-    const event = JSON.parse(payloadRaw.toString('utf8'));
-    console.log('[webhook] event', event.event);
-
-    // handle events we care about
-    if (event.event === 'payment.captured' || event.event === 'payment.failed') {
-      const payment = event.payload && event.payload.payment && event.payload.payment.entity;
-      if (payment) {
-        const receipt = payment.notes && payment.notes.receipt;
-        const status = event.event === 'payment.captured' ? 'paid' : 'failed';
-        console.log('[webhook] payment processed', payment.id, payment.order_id, receipt);
-        await updateOrderStatus(receipt || payment.order_id, status, { razorpay_payment_id: payment.id });
-      } else {
-        console.warn('[webhook] payment entity missing');
-      }
-    } else if (event.event === 'order.paid') {
-      const order = event.payload && event.payload.order && event.payload.order.entity;
-      if (order) {
-        const receipt = order.notes && order.notes.receipt;
-        await updateOrderStatus(receipt || order.id, 'paid', { razorpay_order_id: order.id });
-      }
+    // Attach notes if present and ensure we preserve phone in notes as fallback
+    if (normalizedNotes) {
+      orderPayload.notes = normalizedNotes
     } else {
-      // other events you can log
-      console.log('[webhook] unhandled event type', event.event);
+      orderPayload.notes = {}
     }
 
-    // respond quickly
-    return res.status(200).send('ok');
-  } catch (err) {
-    console.error('/webhook error', err);
-    return res.status(500).send('error');
-  }
-});
+    // ensure notes is an object
+    if (typeof orderPayload.notes !== 'object' || orderPayload.notes === null) {
+      orderPayload.notes = { raw: orderPayload.notes }
+    }
 
-const PORT = process.env.PORT || 4242;
-app.listen(PORT, () => console.log(`Razorpay server running on ${PORT}`));
+    // If phone exists but there's no phone column in DB, it's safe to keep it inside notes too.
+    if (normalizedPhone) {
+      // keep phone top-level (for clarity), and also inside notes.phone
+      orderPayload.notes = { ...(orderPayload.notes || {}), phone: normalizedPhone }
+    }
+
+    if (total_cents != null) {
+      orderPayload.total_cents = Number(total_cents)
+      orderPayload.amount = Number(amount)
+    }
+
+    // money fallback: if front-end used unit prices & didn't send total, try computing from items
+    if ((orderPayload.total_cents == null) && Array.isArray(normalizedItems) && normalizedItems.length > 0) {
+      try {
+        const computedPaise = normalizedItems.reduce((acc, it) => {
+          const qty = Number(it.qty ?? it.quantity ?? it.count ?? 1)
+          const price = Number(it.price ?? it.unit_price ?? it.unit_price_cents ?? 0)
+          if (price > 1000) {
+            // assume paise already
+            return acc + qty * Math.round(price)
+          } else {
+            // assume rupees
+            return acc + qty * Math.round(price * 100)
+          }
+        }, 0)
+        if (computedPaise > 0) {
+          orderPayload.total_cents = computedPaise
+          orderPayload.amount = Math.round(computedPaise / 100)
+        }
+      } catch (e) {
+        // ignore compute errors
+      }
+    }
+
+    safeLog('Raw payload:', raw_payload)
+    safeLog('Normalized orderPayload for insert:', orderPayload)
+
+    // remove undefined keys (so we don't attempt to insert undefined which can overwrite)
+    Object.keys(orderPayload).forEach(k => {
+      if (orderPayload[k] === undefined) delete orderPayload[k]
+    })
+
+    // Insert into Supabase
+    const insertResponse = await supabase
+      .from('orders')
+      .insert([orderPayload])
+      .select('id, order_number')
+      .maybeSingle()
+
+    safeLog('Supabase insert response', insertResponse)
+
+    if (insertResponse.error) {
+      const err = insertResponse.error
+      console.error('Supabase insert error', err)
+
+      const msg = err.message || String(err)
+      // Handle unique/duplicate gracefully by returning existing row if possible
+      if (/duplicate key|unique constraint|already exists/i.test(msg) && orderPayload.order_number) {
+        safeLog('Unique conflict detected. Fetching existing row by order_number')
+        const getExisting = await supabase
+          .from('orders')
+          .select('id, order_number')
+          .eq('order_number', orderPayload.order_number)
+          .maybeSingle()
+        if (getExisting.data?.id) {
+          safeLog('Returning existing row on conflict', getExisting.data)
+          return res.json({ ok: true, orderId: getExisting.data.id, note: 'returned existing on conflict' })
+        }
+      }
+      return res.status(500).json({ ok: false, error: msg })
+    }
+
+    const insertedRow = insertResponse.data
+
+    if (!insertedRow || !insertedRow.id) {
+      return res.status(500).json({ ok: false, error: 'Inserted but could not determine id' })
+    }
+
+    safeLog('Order inserted successfully, id:', insertedRow.id)
+
+    return res.json({
+      ok: true,
+      orderId: insertedRow.id,
+      order_number: insertedRow.order_number
+    })
+  } catch (err) {
+    console.error('verify-payment unexpected error', err)
+    return res.status(500).json({ ok: false, error: err.message || String(err) })
+  }
+})
+
+// --- GET /order/:id (alias) ---
+// Accept both /order/:id and /order/:orderNumber to be tolerant of client requests
+app.get('/order/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    safeLog('GET /order/:id ->', id)
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing id' })
+
+    const result = await lookupOrder(id)
+    if (result.error) {
+      console.error('Order lookup error', result.error)
+      return res.status(500).json({ ok: false, error: result.error.message || String(result.error) })
+    }
+    if (!result.data) return res.status(404).json({ ok: false, error: 'Order not found' })
+    return res.json({ ok: true, order: result.data })
+  } catch (err) {
+    console.error('GET /order/:id unexpected error', err)
+    return res.status(500).json({ ok: false, error: err.message || String(err) })
+  }
+})
+
+// --- GET /order-by-number/:orderNumber (explicit) ---
+app.get('/order-by-number/:orderNumber', async (req, res) => {
+  try {
+    const { orderNumber } = req.params
+    safeLog('GET /order-by-number/:orderNumber ->', orderNumber)
+    if (!orderNumber) return res.status(400).json({ ok: false, error: 'Missing order number' })
+
+    const result = await lookupOrder(orderNumber)
+    if (result.error) {
+      console.error('Order lookup error', result.error)
+      return res.status(500).json({ ok: false, error: result.error.message || String(result.error) })
+    }
+    if (!result.data) return res.status(404).json({ ok: false, error: 'Order not found' })
+    return res.json({ ok: true, order: result.data })
+  } catch (err) {
+    console.error('GET /order-by-number unexpected error', err)
+    return res.status(500).json({ ok: false, error: err.message || String(err) })
+  }
+})
+
+// Basic health
+app.get('/', (req, res) => res.send('OK'))
+
+// Start
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`)
+})
