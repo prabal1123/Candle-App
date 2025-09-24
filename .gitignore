@@ -31,17 +31,13 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
+server/.env
 
 # typescript
 *.tsbuildinfo
 
+# example app (if needed)
 app-example
-.env
-server/.env
-.env
-server/.env
-.env
-.env.*
-.env
-.env.*
