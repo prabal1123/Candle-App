@@ -1,14 +1,13 @@
-// api/order.js
 const { createClient } = require("@supabase/supabase-js");
 
-function setCors(res) {
+function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 module.exports = async (req, res) => {
-  setCors(res);
+  cors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 

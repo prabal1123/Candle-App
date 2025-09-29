@@ -1,29 +1,31 @@
-// api/verify-payment.js
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 
-function setCors(res) {
+function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 module.exports = async (req, res) => {
-  setCors(res);
+  cors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, local_receipt, raw_payload = {} } = req.body || {};
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature)
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ ok: false, error: "Missing razorpay fields" });
+    }
 
     const expected = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
-    if (expected !== razorpay_signature) return res.status(400).json({ ok: false, error: "Invalid signature" });
+    if (expected !== razorpay_signature) {
+      return res.status(400).json({ ok: false, error: "Invalid signature" });
+    }
 
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 

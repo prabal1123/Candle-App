@@ -1,14 +1,13 @@
-// api/create-order.js
 const Razorpay = require("razorpay");
 
-function setCors(res) {
+function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 module.exports = async (req, res) => {
-  setCors(res);
+  cors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 
@@ -23,7 +22,7 @@ module.exports = async (req, res) => {
 
     const rpOrder = await razorpay.orders.create({ amount, currency, receipt, notes });
 
-    return res.status(200).json({
+    res.status(200).json({
       ok: true,
       ...rpOrder,
       key_id: process.env.RAZORPAY_KEY_ID,
@@ -31,6 +30,6 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error("create-order error:", err);
-    return res.status(500).json({ ok: false, error: err.message || String(err) });
+    res.status(500).json({ ok: false, error: err.message || String(err) });
   }
 };
