@@ -7,6 +7,9 @@
   "routes": [
     { "src": "/api/create-order", "dest": "/api/create-order.js" },
     { "src": "/api/(.*)", "dest": "/api/$1.js" },
-    { "src": "/(.*)", "dest": "/index.html" }
+
+    { "handle": "filesystem" },
+
+    { "src": "/(?!assets/|favicon\\.ico|robots\\.txt|manifest\\.json).*", "dest": "/index.html" }
   ]
 }
