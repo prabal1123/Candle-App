@@ -51,6 +51,7 @@
 
 // /api/verify-payment.js
 const crypto = require("crypto");
+const Razorpay = require("razorpay");
 const { createClient } = require("@supabase/supabase-js");
 
 function cors(res) {
@@ -71,25 +72,21 @@ module.exports = async (req, res) => {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      // optional client context to fill DB columns:
-      local_receipt,          // become orders.order_number
-      user_id,                // uuid (optional)
-      items,                  // jsonb (optional)
-      total,                  // rupees (number, optional)
-      total_cents,            // paise (int, optional)
-      currency = "INR",       // varchar (optional)
-      shipping_address,       // text (optional)
-      customer_name,          // text (optional)
-      phone,                  // text (optional)
-      notes                   // json/object (optional)
+      // optional context you may pass from client
+      local_receipt,
+      user_id,
+      items,
+      shipping_address,
+      customer_name,
+      phone,
+      notes
     } = req.body || {};
 
-    // Required Razorpay fields
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ ok: false, error: "Missing razorpay fields" });
     }
 
-    // Verify signature
+    // 1) Verify Razorpay signature
     const expected = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -99,65 +96,59 @@ module.exports = async (req, res) => {
       return res.status(400).json({ ok: false, error: "Invalid signature" });
     }
 
-    // ---------- Normalize money ----------
-    // Your table has both total_cents (paise) and amount (rupees, int).
-    let totalPaise = Number.isFinite(Number(total_cents))
-      ? Math.round(Number(total_cents))
-      : (Number.isFinite(Number(total)) ? Math.round(Number(total) * 100) : null);
+    // 2) Fetch Razorpay order to get amount/currency safely
+    const rzp = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
 
-    let amountRupees = totalPaise != null ? Math.round(totalPaise / 100) : null;
+    const rzpOrder = await rzp.orders.fetch(razorpay_order_id);
+    // rzpOrder.amount is in paise (int), rzpOrder.currency like "INR", rzpOrder.receipt may exist
+    const total_cents = Number(rzpOrder?.amount); // paise
+    const currency = rzpOrder?.currency || "INR";
+    const order_number = local_receipt || rzpOrder?.receipt || null;
 
-    // ---------- Build payload matching your schema ----------
+    if (!Number.isFinite(total_cents) || total_cents <= 0) {
+      return res.status(400).json({ ok: false, error: "Unable to determine order amount" });
+    }
+
+    const amount = Math.round(total_cents / 100); // rupees (int)
+
+    // 3) Prepare payload that matches your Supabase schema exactly
     const orderPayload = {
-      // only columns that exist in "orders"
-      user_id: user_id || null,
-      order_number: local_receipt || null,
-      status: "paid",
-      total_cents: totalPaise,
-      currency,
-      shipping_address: shipping_address || null,
-      // estimated_delivery: keep null unless you calculate a date
-      estimated_delivery: null,
-      items: items ?? null,             // jsonb
-      customer_name: customer_name || null,
-      razorpay_order_id,
-      razorpay_payment_id,
-      amount: amountRupees,            // int4 rupees
-      notes: typeof notes === "object" && notes !== null ? notes : (notes ? { notes } : {})
-      // phone column exists in your schema; add it if you want it top-level:
-      ,phone: phone || null
+      user_id: user_id || null,             // uuid (optional)
+      order_number,                         // text (optional but useful)
+      status: "paid",                       // enum order_status
+      total_cents,                          // int4 NOT NULL ✅
+      currency,                             // varchar
+      shipping_address: shipping_address || null, // text
+      estimated_delivery: null,             // set later if you want
+      items: items ?? null,                 // jsonb
+      customer_name: customer_name || null, // text
+      razorpay_order_id,                    // text
+      razorpay_payment_id,                  // text
+      amount,                               // int4 (rupees)
+      notes: typeof notes === "object" && notes !== null ? notes : (notes ? { notes } : {}),
+      phone: phone || null                  // text
     };
 
-    // remove undefined to avoid overwriting with nulls unintentionally
+    // remove undefined keys
     Object.keys(orderPayload).forEach((k) => {
       if (orderPayload[k] === undefined) delete orderPayload[k];
     });
 
-    // Supabase (use SERVICE_ROLE on server only)
+    // 4) Insert into Supabase
     const supabase = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { persistSession: false } }
     );
 
-    // Insert row
     let { data, error } = await supabase
       .from("orders")
       .insert(orderPayload)
       .select("id, order_number")
       .single();
-
-    // Handle duplicate order_number gracefully (if you add a unique index later)
-    if (error && /duplicate key|unique constraint|already exists/i.test(error.message) && orderPayload.order_number) {
-      const existing = await supabase
-        .from("orders")
-        .select("id, order_number")
-        .eq("order_number", orderPayload.order_number)
-        .maybeSingle();
-      if (existing.data?.id) {
-        return res.status(200).json({ ok: true, orderId: existing.data.id, order_number: existing.data.order_number, note: "existing order returned" });
-      }
-    }
 
     if (error) throw error;
     if (!data?.id) return res.status(500).json({ ok: false, error: "Insert succeeded but id missing" });
