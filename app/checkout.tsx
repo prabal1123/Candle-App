@@ -306,7 +306,6 @@
 //   );
 // }
 
-
 // app/checkout.tsx
 import React, { useEffect, useState } from "react";
 import {
@@ -321,14 +320,12 @@ import {
 import { useRouter } from "expo-router";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { clearCart } from "@/features/cart/cartSlice";
-import { useAppSelector, useAppDispatch } from "../store"; // adjust if needed
-
-// Payment button
+import { useAppSelector, useAppDispatch } from "../store";
 import PlaceOrderButton from "@/components/PlaceOrderButton";
 
-/** Helpers for money conversions **/
-const toPaise = (valueInRupees: number) => Math.round(valueInRupees * 100);
-const paiseToRupeesStr = (paise: number) => (paise / 100).toFixed(2);
+/** Helpers **/
+const toPaise = (rupees: number) => Math.round(rupees * 100);
+const paiseToRupees = (paise: number) => Math.round(paise) / 100;
 
 export default function CheckoutScreen() {
   const { user, loading } = useAuth();
@@ -337,8 +334,8 @@ export default function CheckoutScreen() {
   const items = useAppSelector((s) => s.cart?.items ?? []);
   const dispatch = useAppDispatch();
 
-  // Compute subtotal in paise (robust: prefer price_cents, otherwise use price in rupees)
-  const subtotalPaise = items.reduce((sum, it) => {
+  // compute subtotal from cart items
+  const subtotalPaise = items.reduce((sum, it: any) => {
     const qty = Number(it.quantity ?? it.qty ?? 1);
     const cents =
       typeof it.price_cents === "number"
@@ -348,14 +345,13 @@ export default function CheckoutScreen() {
         : toPaise(Number(it.price ?? 0));
     return sum + cents * Math.max(1, qty);
   }, 0);
+  const subtotal = paiseToRupees(subtotalPaise);
 
-  // also keep subtotal rupees for display
-  const subtotal = Number((subtotalPaise / 100).toFixed(2));
-
-  // form
+  // form state
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState(""); // optional
   const [placing, setPlacing] = useState(false);
 
   const [localOrder, setLocalOrder] = useState<any | null>(null);
@@ -403,7 +399,7 @@ export default function CheckoutScreen() {
     return null;
   };
 
-  // prepare local order
+  /** Build the local order that PlaceOrderButton will use */
   const prepareOrder = async () => {
     const err = validate();
     if (err) {
@@ -413,7 +409,6 @@ export default function CheckoutScreen() {
 
     setPlacing(true);
     try {
-      // Build items with price_cents included
       const orderItems = items.map((it: any) => {
         const qty = Number(it.quantity ?? it.qty ?? 1);
         const priceCents =
@@ -424,34 +419,33 @@ export default function CheckoutScreen() {
             : toPaise(Number(it.price ?? 0));
 
         return {
-          productId: it.id ?? it.productId,
+          product_id: it.id ?? it.productId,
           name: it.name ?? it.title,
           qty,
           price_cents: priceCents,
-          // include human-friendly rupees price too if you want
-          price: Number((priceCents / 100).toFixed(2)),
+          price: paiseToRupees(priceCents), // human-friendly rupees
         };
       });
 
-      // compute totals
       const subtotalPaiseLocal = orderItems.reduce(
         (sum: number, it: any) => sum + (it.price_cents ?? 0) * (it.qty ?? 1),
         0
       );
-      const shippingPaise = 0; // adjust logic if needed
+      const shippingPaise = 0; // adjust if you add shipping
       const totalPaise = subtotalPaiseLocal + shippingPaise;
 
       const order = {
         clientReference: `CANDLE-${Date.now()}`,
         userId: user?.id ?? null,
         items: orderItems,
-        subtotal: Number((subtotalPaiseLocal / 100).toFixed(2)), // rupees for display
-        subtotal_paise: subtotalPaiseLocal, // paise for payment/backend
-        shipping: Number((shippingPaise / 100).toFixed(2)), // rupees
+        subtotal: paiseToRupees(subtotalPaiseLocal),
+        subtotal_paise: subtotalPaiseLocal,
+        shipping: paiseToRupees(shippingPaise),
         shipping_paise: shippingPaise,
-        total: Number((totalPaise / 100).toFixed(2)), // rupees
-        total_paise: totalPaise, // paise
+        total: paiseToRupees(totalPaise),
+        total_paise: totalPaise,
         customer: { name, phone, address },
+        notes: deliveryNotes ? { delivery: deliveryNotes } : {},
         createdAt: new Date().toISOString(),
       };
 
@@ -464,19 +458,19 @@ export default function CheckoutScreen() {
     }
   };
 
+  /** Called after PlaceOrderButton verifies payment on the server */
   const handlePaymentSuccess = async (verifyResponse: any) => {
     setProcessingPayment(true);
     try {
       if (!verifyResponse?.ok || !verifyResponse?.orderId) {
         throw new Error("Payment verified but no orderId returned");
       }
-
       const orderId = String(verifyResponse.orderId);
 
-      // Success: backend already verified & persisted
+      // Clear cart now that order is saved
       dispatch(clearCart());
 
-      // Go to confirmation screen
+      // Go to confirmation
       router.replace({ pathname: "/confirmation", params: { orderId } } as any);
     } catch (e: any) {
       console.error("Post-payment handling failed", e);
@@ -501,6 +495,7 @@ export default function CheckoutScreen() {
           value={name}
           onChangeText={setName}
           placeholder="Full name"
+          autoCapitalize="words"
           style={{
             borderWidth: 1,
             borderColor: "#ddd",
@@ -547,6 +542,25 @@ export default function CheckoutScreen() {
         />
       </View>
 
+      <View style={{ marginTop: 12 }}>
+        <Text style={{ fontWeight: "600" }}>Delivery notes (optional)</Text>
+        <TextInput
+          value={deliveryNotes}
+          onChangeText={setDeliveryNotes}
+          placeholder="e.g. Ring the bell, leave at door"
+          multiline
+          style={{
+            borderWidth: 1,
+            borderColor: "#ddd",
+            padding: 10,
+            borderRadius: 8,
+            marginTop: 6,
+            height: 70,
+            textAlignVertical: "top",
+          }}
+        />
+      </View>
+
       <View
         style={{
           marginTop: 18,
@@ -583,6 +597,9 @@ export default function CheckoutScreen() {
 
             <PlaceOrderButton
               localOrder={localOrder}
+              customer={{ name, phone, address }}   // 👈 passes into verify payload
+              userId={user?.id ?? null}             // 👈 saves to orders.user_id
+              notes={localOrder?.notes}             // 👈 saves to orders.notes (jsonb)
               onPaid={handlePaymentSuccess}
               onError={handlePaymentError}
             />

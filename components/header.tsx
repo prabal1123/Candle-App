@@ -113,7 +113,7 @@ export default function Header() {
         {/* brand */}
         <Pressable style={headerStyles.brandBtn} onPress={() => router.push("/")}>
           <Image source={require("../assets/images/logo.png")} style={headerStyles.logo} />
-          <Text style={headerStyles.brandText}>Candle Co.</Text>
+          <Text style={headerStyles.brandText}>Happy Candles</Text>
         </Pressable>
 
         {/* desktop nav */}
