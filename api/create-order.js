@@ -35,12 +35,11 @@
 //   }
 // };
 
-
-
 // api/create-order.js
 const Razorpay = require("razorpay");
+const util = require("util");
 
-// Force Node runtime on Vercel (not Edge)
+// ✅ Force Node runtime on Vercel (Razorpay SDK needs Node, not Edge)
 module.exports.config = { runtime: "nodejs" };
 
 function cors(res) {
@@ -57,44 +56,79 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Body can sometimes arrive as string; normalize
+    // Body may arrive as string — normalize
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     let { amount, currency = "INR", receipt, notes = {}, raw_payload = {} } = body;
 
-    // Env guards (most common cause of 500s)
+    // ✅ Env guards
     const key_id = process.env.RAZORPAY_KEY_ID;
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
     if (!key_id || !key_secret) {
-      return res.status(500).json({ ok: false, error: "Razorpay keys not configured on server" });
+      return res.status(500).json({
+        ok: false,
+        error: "Razorpay keys not configured on server (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)"
+      });
     }
 
-    // Validate & normalize amount (integer paise, >= 100)
+    // (Optional) quick env presence debug (won't leak secrets)
+    console.log("create-order env check:", { key_id_present: !!key_id, key_secret_present: !!key_secret });
+
+    // ✅ Validate & normalize amount (integer paise, >= 100)
     amount = Number(amount);
     if (!Number.isFinite(amount)) {
-      return res.status(400).json({ ok: false, error: "amount must be a number (in paise)" });
+      return res.status(400).json({ ok: false, error: "amount must be a number in paise (e.g. ₹499 -> 49900)" });
     }
     amount = Math.round(amount);
     if (amount < 100) {
       return res.status(400).json({ ok: false, error: "amount must be >= 100 paise (₹1)" });
     }
 
+    // ✅ Validate receipt
     if (!receipt || typeof receipt !== "string") {
       return res.status(400).json({ ok: false, error: "Missing/invalid receipt" });
     }
 
+    // Create Razorpay instance
     const razorpay = new Razorpay({ key_id, key_secret });
 
-    const rpOrder = await razorpay.orders.create({ amount, currency, receipt, notes });
+    // Create order with Razorpay
+    const rpOrder = await razorpay.orders.create({
+      amount,     // integer paise
+      currency,   // "INR"
+      receipt,    // your reference id/string
+      notes       // optional object
+    });
 
-    // Spread so `id` is top-level (your client expects order.id at root)
+    // ✅ Spread rpOrder so `id` is top-level (client expects order?.id at root)
     return res.status(200).json({
       ok: true,
-      ...rpOrder,
-      key_id,
-      debug: { got_raw_payload: Boolean(raw_payload) }
+      ...rpOrder,                        // { id, amount, currency, status, ... }
+      key_id,                            // used by web checkout
+      debug: { got_raw_payload: !!raw_payload }
     });
   } catch (err) {
-    console.error("create-order error:", err);
-    return res.status(500).json({ ok: false, error: err?.message || String(err) });
+    // 🔴 Max-verbosity error reporting (so we see what Razorpay returned)
+    console.error("create-order error (full):", err);
+
+    let errorOut;
+    try {
+      // include even non-enumerable fields
+      errorOut = JSON.stringify(err, Object.getOwnPropertyNames(err), 2);
+    } catch {
+      try {
+        errorOut = util.inspect(err, { depth: 6 });
+      } catch {
+        try {
+          errorOut = String(err);
+        } catch {
+          errorOut = "Unserializable error";
+        }
+      }
+    }
+
+    return res.status(500).json({
+      ok: false,
+      error: errorOut
+    });
   }
 };
