@@ -1,11 +1,10 @@
-// app/contact.tsx
+// // app/contact.tsx
 import React, { useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   Pressable,
-  ImageBackground,
   TextInput,
   Dimensions,
   Platform,
@@ -15,9 +14,6 @@ import { Stack } from "expo-router";
 import { contactStyles as styles } from "../styles/contactStyles"; // <-- separate styles file
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-// Local hero image
-const heroImg = require("../assets/images/hero.jpg");
 
 export default function Contact(): JSX.Element {
   const [name, setName] = useState("");
@@ -106,20 +102,9 @@ export default function Contact(): JSX.Element {
 
           {/* Contact Info */}
           <Text style={styles.sectionTitle}>Contact Information</Text>
-          <Text style={styles.paragraph}>Email: support@candleco.com</Text>
-          <Text style={styles.paragraph}>Phone: (555) 123-4567</Text>
-          <Text style={styles.paragraph}>Address: 123 Main Street, Anytown, USA</Text>
-
-          {/* Bottom hero image */}
-          <View style={styles.heroWrap}>
-            <ImageBackground
-              source={heroImg}
-              style={styles.heroImage}
-              imageStyle={styles.heroImageStyle}
-              accessible
-              accessibilityLabel="Contact background"
-            />
-          </View>
+          <Text style={styles.paragraph}>Email: support@thehappycandle.com</Text>
+          <Text style={styles.paragraph}>Phone: +91 9823675423</Text>
+          <Text style={styles.paragraph}>Address: 123 Hyderabad</Text>
         </View>
       </KeyboardAvoidingView>
     </ScrollView>

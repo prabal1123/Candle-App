@@ -109,14 +109,14 @@ export const aboutStyles = StyleSheet.create({
   /* hero blocks */
   heroBlock: {
     width: "100%",
-    height: 220,
+    height: "auto",
     aspectRatio: 21 / 9,
     borderRadius: Theme.radius.lg,
     overflow: "hidden",
     marginVertical: Theme.spacing.sm,
   },
   heroImage: {
-    resizeMode: "cover",
+    resizeMode: "contain",
   },
 
   sectionTitle: {
