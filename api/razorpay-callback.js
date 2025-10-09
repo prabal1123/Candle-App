@@ -54,7 +54,7 @@ module.exports = async (req, res) => {
       return null;
     });
 
-    const total_cents  = Number(rzpOrder?.amount) || null; // paise
+    const total_paise  = Number(rzpOrder?.amount) || null; // paise
     const currency     = rzpOrder?.currency || "INR";
     const order_number = rzpOrder?.receipt || null;        // your client reference
     const fromNotes    = (rzpOrder && typeof rzpOrder.notes === "object") ? rzpOrder.notes : {};
@@ -64,7 +64,7 @@ module.exports = async (req, res) => {
       user_id: fromNotes.user_id || null,
       order_number,
       status: ok ? "paid" : "failed",
-      total_cents: Number.isFinite(total_cents) ? total_cents : null,
+      total_cents: Number.isFinite(total_paise) ? total_paise : null, // stored as paise
       currency,
       shipping_address: fromNotes.shipping_address || null,
       estimated_delivery: null,
@@ -72,7 +72,7 @@ module.exports = async (req, res) => {
       customer_name: fromNotes.customer_name || null,
       razorpay_order_id: orderId,
       razorpay_payment_id: paymentId,
-      amount: Number.isFinite(total_cents) ? Math.round(total_cents / 100) : null, // rupees
+      amount: Number.isFinite(total_paise) ? Math.round(total_paise / 100) : null, // rupees
       notes: {
         phone: fromNotes.phone || null,
         ...((fromNotes.extra || null) ? { extra: fromNotes.extra } : {}),
@@ -112,17 +112,30 @@ module.exports = async (req, res) => {
     }
 
     // ---- WEB REDIRECTS ONLY (no app scheme) ----
-    const site =
-      (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
-    // Adjust these paths to your actual web routes if different:
-    const successUrl =
-      `${site}/order/confirmation?orderId=${encodeURIComponent(createdOrderId || "")}` +
-      `&order_number=${encodeURIComponent(order_number || "")}`;
-    const failUrl =
-      `${site}/payment/failed?order_number=${encodeURIComponent(order_number || "")}`;
+    const site = (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
 
+    // Prefer DB id; fall back to receipt if DB insert failed
+    const confirmId = createdOrderId || order_number || "";
+
+    // Optional: include amount/currency in query for display
+    const amount_rupees = Number.isFinite(total_paise) ? Math.round(total_paise / 100) : null;
+
+    const successUrl =
+      `${site}/order/confirmation` +
+      `?orderId=${encodeURIComponent(confirmId)}` +
+      (order_number ? `&order_number=${encodeURIComponent(order_number)}` : "") +
+      (amount_rupees != null ? `&amount=${encodeURIComponent(amount_rupees)}` : "") +
+      `&currency=${encodeURIComponent(currency)}`;
+
+    const failUrl =
+      `${site}/payment/failed` +
+      (order_number ? `?order_number=${encodeURIComponent(order_number)}` : "");
+
+    // Don’t cache redirects; use 303 to switch POST -> GET
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.statusCode = 303;
     res.setHeader("Location", ok ? successUrl : failUrl);
-    res.status(302).end();
+    res.end();
   } catch (err) {
     console.error("razorpay-callback error:", err);
     res.status(500).send("Callback error");
