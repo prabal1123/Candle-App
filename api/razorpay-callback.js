@@ -7,21 +7,34 @@ const { createClient } = require("@supabase/supabase-js");
 
 // --- helpers ---------------------------------------------------------------
 function parseFormOrJson(req) {
-  const isForm = req.headers["content-type"]?.includes("application/x-www-form-urlencoded");
+  const ct = req.headers["content-type"] || "";
+  const isForm = ct.includes("application/x-www-form-urlencoded");
+  const body = req.body;
+
   if (isForm) {
-    if (typeof req.body === "string") return Object.fromEntries(new URLSearchParams(req.body));
-    return req.body || {};
+    // Razorpay sends urlencoded; on Vercel body can be string, Buffer, or already parsed object
+    if (typeof body === "string") return Object.fromEntries(new URLSearchParams(body));
+    if (Buffer.isBuffer(body)) return Object.fromEntries(new URLSearchParams(body.toString("utf8")));
+    if (body && typeof body === "object") return body;
+    return {};
   }
-  return req.body || {};
+
+  // JSON or other
+  if (typeof body === "string") {
+    try { return JSON.parse(body); } catch { return {}; }
+  }
+  if (Buffer.isBuffer(body)) {
+    try { return JSON.parse(body.toString("utf8")); } catch { return {}; }
+  }
+  return body || {};
 }
 
 function verifySignature({ order_id, payment_id, signature, key_secret }) {
-  const body = `${order_id}|${payment_id}`;
-  const expected = crypto.createHmac("sha256", key_secret).update(body).digest("hex");
+  const payload = `${order_id}|${payment_id}`;
+  const expected = crypto.createHmac("sha256", key_secret).update(payload).digest("hex");
   return expected === signature;
 }
 
-// Fallback to compute site origin if PUBLIC_BASE_URL isn't set
 function getOrigin(req) {
   const proto = req.headers["x-forwarded-proto"] || "https";
   const host  = req.headers["x-forwarded-host"] || req.headers.host;
@@ -42,6 +55,7 @@ module.exports = async (req, res) => {
     if (!key_id || !key_secret) return res.status(500).send("Razorpay keys missing");
 
     if (!orderId || !paymentId || !signature) {
+      console.error("Callback missing fields:", { orderId, paymentId, signaturePresent: !!signature });
       return res.status(400).send("Missing Razorpay fields");
     }
 
@@ -80,7 +94,6 @@ module.exports = async (req, res) => {
       phone: fromNotes.phone || null,
     };
 
-    // Clean undefined
     Object.keys(orderPayload).forEach((k) => {
       if (orderPayload[k] === undefined) delete orderPayload[k];
     });
@@ -111,27 +124,20 @@ module.exports = async (req, res) => {
       }
     }
 
-    // ---- WEB REDIRECTS ONLY (no app scheme) ----
+    // ---- WEB REDIRECTS ONLY ----
     const site = (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
-
-    // Prefer DB id; fall back to receipt if DB insert failed
-    const confirmId = createdOrderId || order_number || "";
-
-    // Optional: include amount/currency in query for display
-    const amount_rupees = Number.isFinite(total_paise) ? Math.round(total_paise / 100) : null;
+    const confirmId = createdOrderId || order_number || ""; // fallback so page can still load
 
     const successUrl =
-      `${site}/order/confirmation` +
+      `${site}/confirmation` +
       `?orderId=${encodeURIComponent(confirmId)}` +
-      (order_number ? `&order_number=${encodeURIComponent(order_number)}` : "") +
-      (amount_rupees != null ? `&amount=${encodeURIComponent(amount_rupees)}` : "") +
-      `&currency=${encodeURIComponent(currency)}`;
+      (order_number ? `&order_number=${encodeURIComponent(order_number)}` : "");
 
     const failUrl =
       `${site}/payment/failed` +
       (order_number ? `?order_number=${encodeURIComponent(order_number)}` : "");
 
-    // Don’t cache redirects; use 303 to switch POST -> GET
+    // Prevent caching; use 303 to switch POST -> GET
     res.setHeader("Cache-Control", "no-store, max-age=0");
     res.statusCode = 303;
     res.setHeader("Location", ok ? successUrl : failUrl);

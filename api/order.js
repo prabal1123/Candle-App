@@ -1,24 +1,86 @@
+// const { createClient } = require("@supabase/supabase-js");
+
+// function cors(res) {
+//   res.setHeader("Access-Control-Allow-Origin", "*");
+//   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
+//   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+// }
+
+// module.exports = async (req, res) => {
+//   cors(res);
+//   if (req.method === "OPTIONS") return res.status(200).end();
+//   if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
+
+//   const { id } = req.query || {};
+//   if (!id) return res.status(400).json({ ok: false, error: "Missing id" });
+
+//   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+//   const { data, error } = await supabase.from("orders").select("*").eq("id", id).single();
+
+//   if (error) return res.status(500).json({ ok: false, error: error.message });
+//   if (!data) return res.status(404).json({ ok: false, error: "Order not found" });
+
+//   res.status(200).json({ ok: true, order: data });
+// };
+
+
+
+// /api/order.js
+module.exports.config = { runtime: "nodejs" };
+
 const { createClient } = require("@supabase/supabase-js");
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "authorization, x-client-info, content-type"
+  );
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 module.exports = async (req, res) => {
   cors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
+  if (req.method !== "GET") {
+    return res
+      .status(405)
+      .json({ ok: false, error: `Method ${req.method} not allowed` });
+  }
 
-  const { id } = req.query || {};
-  if (!id) return res.status(400).json({ ok: false, error: "Missing id" });
+  const { id, order_number } = req.query || {};
+  if (!id && !order_number) {
+    return res
+      .status(400)
+      .json({ ok: false, error: "Provide id or order_number" });
+  }
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const { data, error } = await supabase.from("orders").select("*").eq("id", id).single();
+  try {
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } }
+    );
 
-  if (error) return res.status(500).json({ ok: false, error: error.message });
-  if (!data) return res.status(404).json({ ok: false, error: "Order not found" });
+    // Build query based on whichever identifier we have
+    let q = supabase.from("orders").select("*").limit(1);
+    if (id) q = q.eq("id", id);
+    if (!id && order_number) q = q.eq("order_number", order_number);
 
-  res.status(200).json({ ok: true, order: data });
+    const { data, error } = await q.single();
+
+    if (error) {
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+    if (!data) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    // Don’t cache; confirmations should always be fresh
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    return res.status(200).json({ ok: true, order: data });
+  } catch (e) {
+    console.error("/api/order error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
 };
