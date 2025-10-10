@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import supabase  from "@/lib/supabase";
 
 export async function verifyPaymentOnServer(verifyBody: any, backendUrl: string) {
   // 1. Get Supabase token

@@ -224,7 +224,6 @@
 
 
 
-
 // app/cart.tsx
 import React, { useEffect, useState } from "react";
 import {
@@ -266,29 +265,40 @@ const getProductId = (it: UIItem): string =>
    ID helpers
    ========================= */
 
+/** Use the shared guest-id (matches lib/supabase.ts header) */
 async function getOrCreateGuestId(): Promise<string> {
-  let guestId = await AsyncStorage.getItem("guest_id");
-  if (!guestId) {
-    guestId = crypto.randomUUID();
-    await AsyncStorage.setItem("guest_id", guestId);
+  try {
+    const guest = await (async () => {
+      const mod = await import("@/lib/guest");
+      // guarantees a value immediately and syncs to storage in the background
+      const id = mod.getGuestIdSync();
+      mod.reconcileGuestIdAsync().catch(() => {});
+      return id;
+    })();
+    return guest;
+  } catch {
+    // Fallback if guest module import ever fails
+    let guestId = await AsyncStorage.getItem("guest_id");
+    if (!guestId) {
+      guestId = (global as any).crypto?.randomUUID?.() ??
+        "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      await AsyncStorage.setItem("guest_id", guestId);
+    }
+    return guestId;
   }
-  return guestId;
 }
 
 async function getUserOrGuestId(): Promise<string | null> {
   try {
-    if (supabase?.auth?.getUser) {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user?.id) return data.user.id;
-    }
-    if (supabase?.auth?.getSession) {
-      const res = await supabase.auth.getSession();
-      if (res?.data?.session?.user?.id) return res.data.session.user.id;
-    }
-    if ((supabase.auth as any)?.user) {
-      const user = (supabase.auth as any).user();
-      if (user?.id) return user.id;
-    }
+    const { data } = await supabase.auth.getUser();
+    if (data?.user?.id) return data.user.id;
+
+    const res = await supabase.auth.getSession();
+    if (res?.data?.session?.user?.id) return res.data.session.user.id;
   } catch (err) {
     console.warn("[cart] getUserOrGuestId failed:", err);
   }
@@ -302,7 +312,7 @@ async function setCartId(id: string) {
   await AsyncStorage.setItem("cart_id", id);
 }
 
-/** Ensure a cart exists for this user/guest and return its id */
+/** Ensure a cart exists (prefer logged-in user cart, else guest cart) and return its id */
 async function getOrCreateCartId(userOrGuestId: string): Promise<string> {
   const cached = await getCartId();
   if (cached) return cached;
@@ -310,9 +320,9 @@ async function getOrCreateCartId(userOrGuestId: string): Promise<string> {
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData?.session?.user?.id ?? null;
 
-  const match = uid ? { user_id: uid } : { guest_id: userOrGuestId };
+  const match = uid ? { user_id: uid, status: "open" } : { guest_id: userOrGuestId, status: "open" };
 
-  // find existing
+  // find existing open cart
   const { data: existing, error: findErr } = await supabase
     .from("carts")
     .select("id")
@@ -327,10 +337,10 @@ async function getOrCreateCartId(userOrGuestId: string): Promise<string> {
     return existing.id;
   }
 
-  // create
+  // create open cart
   const { data: created, error: insertErr } = await supabase
     .from("carts")
-    .insert([match])
+    .insert([{ ...match }])
     .select("id")
     .single();
 
@@ -341,7 +351,7 @@ async function getOrCreateCartId(userOrGuestId: string): Promise<string> {
 }
 
 /* =========================
-   UI bits
+   UI helpers
    ========================= */
 
 function pickImageSource(item: UIItem): ImageSourcePropType | null {
@@ -447,21 +457,23 @@ export default function CartScreen() {
 
   async function onInc(productId: string) {
     const userOrGuestId = await getUserOrGuestId();
-    const cartId = await getCartId();
-    if (!userOrGuestId || !cartId) return console.warn("missing ids");
+    let cartId = await getCartId();
+    if (!userOrGuestId) return console.warn("missing ids");
 
+    if (!cartId) cartId = await getOrCreateCartId(userOrGuestId);
     const it = items.find((i) => getProductId(i) === productId);
     if (it) {
       const newQty = (Number(it.quantity) || 1) + 1;
-      await syncUpdateQuantity(dispatch, userOrGuestId, cartId, productId, newQty);
+      await syncUpdateQuantity(dispatch, userOrGuestId, cartId!, productId, newQty);
     }
   }
 
   async function onDec(productId: string) {
     const userOrGuestId = await getUserOrGuestId();
-    const cartId = await getCartId();
-    if (!userOrGuestId || !cartId) return console.warn("missing ids");
+    let cartId = await getCartId();
+    if (!userOrGuestId) return console.warn("missing ids");
 
+    if (!cartId) cartId = await getOrCreateCartId(userOrGuestId);
     const it = items.find((i) => getProductId(i) === productId);
     if (!it) return;
 
@@ -473,36 +485,38 @@ export default function CartScreen() {
           text: "Remove",
           style: "destructive",
           onPress: async () => {
-            await syncRemoveItem(dispatch, userOrGuestId, cartId, productId);
+            await syncRemoveItem(dispatch, userOrGuestId, cartId!, productId);
           },
         },
       ]);
     } else {
-      await syncUpdateQuantity(dispatch, userOrGuestId, cartId, productId, newQty);
+      await syncUpdateQuantity(dispatch, userOrGuestId, cartId!, productId, newQty);
     }
   }
 
   async function onRemove(productId: string) {
     const userOrGuestId = await getUserOrGuestId();
-    const cartId = await getCartId();
-    if (!userOrGuestId || !cartId) return console.warn("missing ids");
+    let cartId = await getCartId();
+    if (!userOrGuestId) return console.warn("missing ids");
 
-    await syncRemoveItem(dispatch, userOrGuestId, cartId, productId);
+    if (!cartId) cartId = await getOrCreateCartId(userOrGuestId);
+    await syncRemoveItem(dispatch, userOrGuestId, cartId!, productId);
   }
 
   async function onClearCart() {
     const userOrGuestId = await getUserOrGuestId();
-    const cartId = await getCartId();
-    if (!userOrGuestId || !cartId) {
+    let cartId = await getCartId();
+    if (!userOrGuestId) {
       console.warn("missing ids for clear cart");
       return;
     }
+    if (!cartId) cartId = await getOrCreateCartId(userOrGuestId);
 
     // optimistic clear
     dispatch(clearCart());
 
     // remote clear
-    await syncClearCart(dispatch, userOrGuestId, cartId);
+    await syncClearCart(dispatch, userOrGuestId, cartId!);
   }
 
   return (
