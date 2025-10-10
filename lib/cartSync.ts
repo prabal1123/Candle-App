@@ -9,26 +9,17 @@
 // } from "@/features/cart/cartSlice";
 
 // /**
-//  * Uses your slice's action creators for optimistic updates (typed & exact shapes).
-//  * If supabase is unavailable we still update Redux (guest/local carts).
-//  *
-//  * NOTE: loadCart(userId) will still be dispatched after remote mutations to reconcile.
-//  * If you call these functions passing a cartId (not a userId) as the first arg,
-//  * loadCart will attempt to treat that id as a user id — if you need different
-//  * behaviour for guest carts we can add a separate refresh action for cartId.
+//  * IMPORTANT: userIdOrGuestId can be either a logged-in user_id OR a guest_id
+//  * You must pass whichever is available from your app logic.
 //  */
 
-// /** Upsert (add) an item into the user's cart in Supabase.
-//  *  If item exists, increment quantity. After DB change we reload the cart in Redux.
-//  */
 // export async function syncAddItem(
 //   dispatch: AppDispatch,
-//   userIdOrCartId: string,
+//   userIdOrGuestId: string,
 //   cartId: string,
 //   product: { id: string; title: string; price: number; image?: any },
 //   quantity = 1
 // ) {
-//   // optimistic local add via your slice action creator
 //   try {
 //     dispatch(
 //       addToCart({
@@ -38,22 +29,16 @@
 //         image: product.image,
 //       })
 //     );
-//     // note: your reducer increases quantity when item exists
 //   } catch (err) {
-//     // don't block remote logic
-//     // eslint-disable-next-line no-console
 //     console.warn("[cartSync] optimistic add dispatch failed:", err);
 //   }
 
 //   if (!supabase) {
-//     // guest/local-only mode
-//     // eslint-disable-next-line no-console
 //     console.warn("[cartSync] supabase client not available — performed local add only.");
 //     return;
 //   }
 
 //   try {
-//     // try find existing item for this product + cart
 //     const { data: existing, error: e1 } = await supabase
 //       .from("cart_items")
 //       .select("*")
@@ -61,9 +46,7 @@
 //       .limit(1)
 //       .single();
 
-//     if (e1 && e1.code !== "PGRST116") {
-//       throw e1;
-//     }
+//     if (e1 && e1.code !== "PGRST116") throw e1;
 
 //     if (existing) {
 //       const newQty = (existing.quantity || 0) + quantity;
@@ -88,50 +71,37 @@
 //       ]);
 //     }
 
-//     // Reconcile from server. NOTE: loadCart expects a userId — in guest flows
-//     // if you pass a cartId here it may not map to a user. If that matters, we
-//     // can add a separate "refreshCartByCartId" later.
-//     dispatch(loadCart(userIdOrCartId));
+//     // reload using whichever id you passed (user or guest)
+//     dispatch(loadCart(userIdOrGuestId));
 //   } catch (err) {
-//     // eslint-disable-next-line no-console
 //     console.error("[cartSync] syncAddItem failed (remote):", err);
 //   }
 // }
 
-// /**
-//  * Update quantity of a product in the cart (by product id).
-//  * If newQty <= 0 it deletes the item.
-//  */
 // export async function syncUpdateQuantity(
 //   dispatch: AppDispatch,
-//   userIdOrCartId: string,
+//   userIdOrGuestId: string,
 //   productId: string,
 //   newQty: number
 // ) {
-//   // optimistic local update using your slice action creator
 //   try {
 //     dispatch(updateQuantity({ id: productId, qty: newQty }));
 //   } catch (err) {
-//     // eslint-disable-next-line no-console
 //     console.warn("[cartSync] optimistic update dispatch failed:", err);
 //   }
 
 //   if (!supabase) {
-//     // local-only fallback
-//     // eslint-disable-next-line no-console
 //     console.warn("[cartSync] supabase client not available — performed local update only.");
 //     return;
 //   }
 
 //   try {
 //     if (newQty <= 0) {
-//       // delete by product_id (assumes server uses product_id)
 //       await supabase.from("cart_items").delete().eq("product_id", productId);
-//       dispatch(loadCart(userIdOrCartId));
+//       dispatch(loadCart(userIdOrGuestId));
 //       return;
 //     }
 
-//     // find item first to compute line_total
 //     const { data: item, error: findErr } = await supabase
 //       .from("cart_items")
 //       .select("*")
@@ -140,15 +110,11 @@
 //       .single();
 
 //     if (findErr) {
-//       // eslint-disable-next-line no-console
 //       console.warn("[cartSync] item lookup error (updateQuantity):", findErr);
-//       return dispatch(loadCart(userIdOrCartId));
+//       return dispatch(loadCart(userIdOrGuestId));
 //     }
 
-//     if (!item) {
-//       // item not found server-side — refresh
-//       return dispatch(loadCart(userIdOrCartId));
-//     }
+//     if (!item) return dispatch(loadCart(userIdOrGuestId));
 
 //     await supabase
 //       .from("cart_items")
@@ -159,48 +125,35 @@
 //       })
 //       .eq("id", item.id);
 
-//     dispatch(loadCart(userIdOrCartId));
+//     dispatch(loadCart(userIdOrGuestId));
 //   } catch (err) {
-//     // eslint-disable-next-line no-console
 //     console.error("[cartSync] syncUpdateQuantity failed (remote):", err);
 //   }
 // }
 
-// /**
-//  * Remove an item from the cart (by product id).
-//  */
 // export async function syncRemoveItem(
 //   dispatch: AppDispatch,
-//   userIdOrCartId: string,
+//   userIdOrGuestId: string,
 //   productId: string
 // ) {
-//   // optimistic local remove
 //   try {
 //     dispatch(removeFromCart(productId));
 //   } catch (err) {
-//     // eslint-disable-next-line no-console
 //     console.warn("[cartSync] optimistic remove dispatch failed:", err);
 //   }
 
 //   if (!supabase) {
-//     // eslint-disable-next-line no-console
 //     console.warn("[cartSync] supabase client not available — performed local remove only.");
 //     return;
 //   }
 
 //   try {
 //     await supabase.from("cart_items").delete().eq("product_id", productId);
-//     dispatch(loadCart(userIdOrCartId));
+//     dispatch(loadCart(userIdOrGuestId));
 //   } catch (err) {
-//     // eslint-disable-next-line no-console
 //     console.error("[cartSync] syncRemoveItem failed (remote):", err);
 //   }
 // }
-
-
-
-
-
 
 
 // lib/cartSync.ts
@@ -214,8 +167,8 @@ import {
 } from "@/features/cart/cartSlice";
 
 /**
- * IMPORTANT: userIdOrGuestId can be either a logged-in user_id OR a guest_id
- * You must pass whichever is available from your app logic.
+ * userIdOrGuestId = logged-in user_id OR guest_id (whichever you’re using)
+ * cartId = the current cart row id (required to scope mutations)
  */
 
 export async function syncAddItem(
@@ -225,15 +178,9 @@ export async function syncAddItem(
   product: { id: string; title: string; price: number; image?: any },
   quantity = 1
 ) {
+  // optimistic add
   try {
-    dispatch(
-      addToCart({
-        id: product.id,
-        title: product.title,
-        price: product.price,
-        image: product.image,
-      })
-    );
+    dispatch(addToCart({ id: product.id, title: product.title, price: product.price, image: product.image }));
   } catch (err) {
     console.warn("[cartSync] optimistic add dispatch failed:", err);
   }
@@ -244,14 +191,15 @@ export async function syncAddItem(
   }
 
   try {
+    // find existing line for this cart + product
     const { data: existing, error: e1 } = await supabase
       .from("cart_items")
       .select("*")
-      .match({ cart_id: cartId, product_id: product.id })
-      .limit(1)
-      .single();
+      .eq("cart_id", cartId)
+      .eq("product_id", product.id)
+      .maybeSingle(); // can be 0 rows
 
-    if (e1 && e1.code !== "PGRST116") throw e1;
+    if (e1) throw e1;
 
     if (existing) {
       const newQty = (existing.quantity || 0) + quantity;
@@ -276,7 +224,6 @@ export async function syncAddItem(
       ]);
     }
 
-    // reload using whichever id you passed (user or guest)
     dispatch(loadCart(userIdOrGuestId));
   } catch (err) {
     console.error("[cartSync] syncAddItem failed (remote):", err);
@@ -286,9 +233,11 @@ export async function syncAddItem(
 export async function syncUpdateQuantity(
   dispatch: AppDispatch,
   userIdOrGuestId: string,
+  cartId: string,
   productId: string,
   newQty: number
 ) {
+  // optimistic update
   try {
     dispatch(updateQuantity({ id: productId, qty: newQty }));
   } catch (err) {
@@ -302,24 +251,31 @@ export async function syncUpdateQuantity(
 
   try {
     if (newQty <= 0) {
-      await supabase.from("cart_items").delete().eq("product_id", productId);
+      await supabase
+        .from("cart_items")
+        .delete()
+        .eq("cart_id", cartId)
+        .eq("product_id", productId);
       dispatch(loadCart(userIdOrGuestId));
       return;
     }
 
+    // look up this cart’s item
     const { data: item, error: findErr } = await supabase
       .from("cart_items")
       .select("*")
+      .eq("cart_id", cartId)
       .eq("product_id", productId)
-      .limit(1)
-      .single();
+      .maybeSingle(); // avoid 406 when not found
 
     if (findErr) {
       console.warn("[cartSync] item lookup error (updateQuantity):", findErr);
       return dispatch(loadCart(userIdOrGuestId));
     }
-
-    if (!item) return dispatch(loadCart(userIdOrGuestId));
+    if (!item) {
+      // nothing to update; reconcile from server
+      return dispatch(loadCart(userIdOrGuestId));
+    }
 
     await supabase
       .from("cart_items")
@@ -339,8 +295,10 @@ export async function syncUpdateQuantity(
 export async function syncRemoveItem(
   dispatch: AppDispatch,
   userIdOrGuestId: string,
+  cartId: string,
   productId: string
 ) {
+  // optimistic remove
   try {
     dispatch(removeFromCart(productId));
   } catch (err) {
@@ -353,7 +311,12 @@ export async function syncRemoveItem(
   }
 
   try {
-    await supabase.from("cart_items").delete().eq("product_id", productId);
+    await supabase
+      .from("cart_items")
+      .delete()
+      .eq("cart_id", cartId)
+      .eq("product_id", productId);
+
     dispatch(loadCart(userIdOrGuestId));
   } catch (err) {
     console.error("[cartSync] syncRemoveItem failed (remote):", err);
