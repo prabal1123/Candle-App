@@ -1,6 +1,6 @@
 // features/cart/cartSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
-import supabase from "@/lib/supabaseClient"; // ✅ Correct
+import supabase from "@/lib/supabase"; // ✅ Correct
 
 
 export type CartItem = {
