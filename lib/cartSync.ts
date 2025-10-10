@@ -1,5 +1,5 @@
 // lib/cartSync.ts
-import supabase from "@/lib/supabaseClient";
+import supabase from "@/lib/supabase";
 import type { AppDispatch } from "@/store";
 import {
   addToCart,
