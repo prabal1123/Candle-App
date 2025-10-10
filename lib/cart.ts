@@ -1,5 +1,5 @@
 // lib/cart.ts
-import supabase from "@/lib/supabaseClient"; // ✅ Correct
+import supabase from "@/lib/supabase"; // ✅ Correct
 
 
 // Get or create cart for current user
