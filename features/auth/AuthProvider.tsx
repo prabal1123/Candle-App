@@ -65,6 +65,7 @@
 //   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
 //   return ctx;
 // };
+
 // app/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";

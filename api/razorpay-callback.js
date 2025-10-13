@@ -314,8 +314,7 @@
 
 
 
-
-// /api/razorpay-callback.js
+// api/razorpay-callback.js
 module.exports.config = { runtime: "nodejs" };
 
 const crypto = require("crypto");
@@ -369,70 +368,67 @@ module.exports = async (req, res) => {
 
     const ok = verifySignature({ order_id: orderId, payment_id: paymentId, signature, key_secret });
 
-    // Fetch order details from Razorpay (amount, currency, receipt, notes)
+    // Fetch order from Razorpay (to get receipt + amount + notes)
     const rzp = new Razorpay({ key_id, key_secret });
     const rzpOrder = await rzp.orders.fetch(orderId).catch((e) => {
       console.error("Razorpay fetch order failed:", e?.error || e);
       return null;
     });
 
-    const total_paise  = Number(rzpOrder?.amount) || null; // paise
-    const currency     = rzpOrder?.currency || "INR";
-    const receipt      = rzpOrder?.receipt || null;        // your order_number
-    const notesObj     = (rzpOrder && typeof rzpOrder.notes === "object") ? rzpOrder.notes : {};
+    const amountPaise = Number(rzpOrder?.amount);
+    const totalPaise  = Number.isFinite(amountPaise) ? Math.floor(amountPaise) : 0; // NOT NULL guard
+    const currency    = rzpOrder?.currency || "INR";
+    const receipt     = rzpOrder?.receipt || null; // your order_number from create-order
+    const notesObj    = (rzpOrder && typeof rzpOrder.notes === "object") ? rzpOrder.notes : {};
 
-    const safeOrderNumber = receipt || `CANDLE-${Date.now()}`;
-    const safeTotalPaise  = Number.isFinite(total_paise) ? Math.floor(total_paise) : null;
-
-    const orderPayload = {
-      user_id: notesObj.user_id || null,
-      order_number: safeOrderNumber,
-      status: ok ? "paid" : "failed",
-      total_cents: safeTotalPaise,
+    // Build order payload for DB
+    const orderNumber = receipt || `CANDLE-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+    const payload = {
+      user_id: notesObj.user_id ?? null,
+      order_number: orderNumber,
+      status: ok ? "paid" : "failed",      // ensure enum has these values
+      total_cents: totalPaise,             // paise (integer, NOT NULL in schema)
       currency,
-      shipping_address: notesObj.shipping_address || null,
+      shipping_address: notesObj.shipping_address ?? null,
       estimated_delivery: null,
-      items: notesObj.items || null,
-      customer_name: notesObj.customer_name || null,
+      items: notesObj.items ?? null,
+      customer_name: notesObj.customer_name ?? null,
       razorpay_order_id: orderId,
       razorpay_payment_id: paymentId,
-      amount: safeTotalPaise ? Math.round(safeTotalPaise / 100) : null,
+      amount: Math.round(totalPaise / 100), // rupees (integer)
       notes: { ...(notesObj || {}) },
-      phone: notesObj.phone || null,
+      phone: notesObj.phone ?? null,
+      updated_at: nowIso,                  // keep updated_at fresh
     };
-    Object.keys(orderPayload).forEach((k) => orderPayload[k] === undefined && delete orderPayload[k]);
 
-    let createdOrderId = null;
-    if (ok) {
-      try {
-        const supabase = createClient(
-          process.env.SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_ROLE_KEY,
-          { auth: { persistSession: false } }
-        );
-        const { data, error } = await supabase
-          .from("orders")
-          .insert(orderPayload)
-          .select("id")
-          .single();
-        if (!error) createdOrderId = data?.id || null;
-        else console.error("Supabase insert error:", error);
-      } catch (e) {
-        console.error("Supabase client/init error:", e);
-      }
+    // Idempotent write based on unique(order_number)
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } }
+    );
+
+    const { error: upsertErr } = await supabase
+      .from("orders")
+      .upsert(payload, { onConflict: "order_number", ignoreDuplicates: false })
+      .select("id")
+      .single();
+
+    if (upsertErr) {
+      console.error("Supabase upsert error:", upsertErr);
+      // continue to redirect; user shouldn’t be stuck at gateway
     }
 
-    // Redirect only with order_number (no orderId to avoid UUID confusion)
+    // Redirect with order_number (never with id to avoid UUID confusion)
     const site = (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
-    const params = new URLSearchParams();
-    params.set("order_number", safeOrderNumber);
-    if (!createdOrderId) params.set("pending", "true");
+    const params = new URLSearchParams({ order_number: orderNumber });
 
     const successUrl = `${site}/confirmation?${params.toString()}`;
-    const failUrl    = `${site}/payment/failed?order_number=${encodeURIComponent(safeOrderNumber)}`;
+    const failUrl    = `${site}/payment/failed?${params.toString()}`;
 
     res.setHeader("Cache-Control", "no-store, max-age=0");
-    res.statusCode = 303;                 // POST->GET redirect
+    res.statusCode = 303; // POST->GET redirect
     res.setHeader("Location", ok ? successUrl : failUrl);
     res.end();
   } catch (err) {

@@ -527,20 +527,19 @@
 //     </ScrollView>
 //   );
 // }
-
 // app/confirmation.tsx
-import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { View, Text, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../features/auth/AuthProvider";
 import { confirmationStyles as styles } from "@/styles/confirmationStyles";
 
 function getApiBase() {
   const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
-  if (typeof window !== "undefined") return `${window.location.origin}/api`;
-  return "https://candle-app-lac.vercel.app/api";
+  if (fromEnv) return fromEnv;                         // e.g. https://site.com/api
+  if (typeof window !== "undefined") return `${window.location.origin}/api`; // same-origin
+  return "https://candle-app-lac.vercel.app/api";      // fallback
 }
 const API_BASE = getApiBase();
 
@@ -568,7 +567,7 @@ type Order = {
 };
 
 const isUUID = (s?: string | null) =>
-  !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+  !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s || "");
 
 function centsToCurrency(cents?: number, currency = "INR") {
   const value = (cents ?? 0) / 100;
@@ -581,147 +580,165 @@ function centsToCurrency(cents?: number, currency = "INR") {
 
 export default function ConfirmationScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ order_number?: string; orderNumber?: string; id?: string; orderId?: string; order_id?: string; pending?: string }>();
   const { user, loading: authLoading } = useAuth();
+
   const [loading, setLoading] = useState<boolean>(false);
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Read query params
-  let idParam: string | null = null;
-  let numParam: string | null = null;
-  let pendingFromQuery: string | null = null;
+  // Read query params (works on native too). Also support legacy names.
+  const fromRouterOrderNum = (params.order_number || params.orderNumber) as string | undefined;
+  const fromRouterId = (params.id || params.orderId || params.order_id) as string | undefined;
+  const pending = params.pending === "true";
 
-  if (typeof window !== "undefined" && window.location?.search) {
+  // Web fallback (just in case the page was linked directly and router didn’t catch)
+  const { fallbackOrderNum, fallbackId } = useMemo(() => {
+    if (typeof window === "undefined") return { fallbackOrderNum: undefined, fallbackId: undefined };
     const sp = new URLSearchParams(window.location.search);
-    idParam = sp.get("orderId") ?? sp.get("order_id");
-    numParam = sp.get("order_number") ?? sp.get("orderNumber");
-    pendingFromQuery = sp.get("pending");
-  }
+    return {
+      fallbackOrderNum: sp.get("order_number") || sp.get("orderNumber") || undefined,
+      fallbackId: sp.get("id") || sp.get("orderId") || sp.get("order_id") || undefined,
+    };
+  }, []);
 
-  const idIfUuid = isUUID(idParam) ? idParam : null;
-  const orderNumber = numParam || (!isUUID(idParam) && idParam ? idParam : null);
-  const pending = pendingFromQuery === "true";
+  const orderNumber = useMemo(() => {
+    return fromRouterOrderNum || fallbackOrderNum || (fromRouterId && !isUUID(fromRouterId) ? fromRouterId : undefined) || (fallbackId && !isUUID(fallbackId) ? fallbackId : undefined);
+  }, [fromRouterOrderNum, fromRouterId, fallbackOrderNum, fallbackId]);
 
-  const readLastOrderFromStorage = async (): Promise<Order | null> => {
+  const idIfUuid = useMemo(() => {
+    const candidate = fromRouterId || fallbackId;
+    return isUUID(candidate) ? candidate! : undefined;
+  }, [fromRouterId, fallbackId]);
+
+  const endpoint = useMemo(() => {
+    if (orderNumber) return `${API_BASE}/order?order_number=${encodeURIComponent(orderNumber)}`;
+    if (idIfUuid) return `${API_BASE}/order?id=${encodeURIComponent(idIfUuid)}`;
+    return null;
+  }, [orderNumber, idIfUuid]);
+
+  // Cache helpers
+  const readLastOrderFromStorage = useCallback(async (): Promise<Order | null> => {
     try {
       const raw = await AsyncStorage.getItem("lastOrder");
       return raw ? (JSON.parse(raw) as Order) : null;
     } catch {
       return null;
     }
-  };
+  }, []);
+
+  const writeLastOrderToStorage = useCallback(async (o: Order) => {
+    try {
+      await AsyncStorage.setItem("lastOrder", JSON.stringify(o));
+    } catch {}
+  }, []);
+
+  const fetchOrder = useCallback(async () => {
+    setError(null);
+    if (!endpoint) {
+      // nothing to fetch; try cache
+      const cached = await readLastOrderFromStorage();
+      if (cached) setOrder(cached);
+      else setError("Missing order reference in URL.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(endpoint, { headers: { Accept: "application/json", "Cache-Control": "no-store" } });
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok || !json?.order) {
+        const msg =
+          json?.error ||
+          (res.status === 404
+            ? "Order not found. If payment just finished, pull to refresh in a moment."
+            : `Failed to fetch order (${res.status}).`);
+        throw new Error(msg);
+      }
+
+      const theOrder: Order = json.order;
+
+      // Normalize items
+      if (Array.isArray(theOrder.items)) {
+        theOrder.items = theOrder.items.map((it: any, idx: number) => ({
+          id: it.id ?? String(idx),
+          name: it.name ?? it.title ?? it.productName ?? it.product_name ?? "Item",
+          quantity: Number(it.quantity ?? it.qty ?? 1),
+          unit_price_cents: Number(it.unit_price_cents ?? (it.price != null ? Math.round(Number(it.price) * 100) : 0)),
+          line_total_cents: Number(
+            it.line_total_cents ?? (it.line_total != null ? Math.round(Number(it.line_total) * 100) : NaN)
+          ),
+          product_id: it.product_id ?? it.productId ?? null,
+        }));
+      } else {
+        theOrder.items = [];
+      }
+
+      setOrder(theOrder);
+      writeLastOrderToStorage(theOrder);
+    } catch (e: any) {
+      setError(e?.message || "Something went wrong while loading your order.");
+    } finally {
+      setLoading(false);
+    }
+  }, [endpoint, readLastOrderFromStorage, writeLastOrderToStorage]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
-      setError(null);
-      setLoading(!!(idIfUuid || orderNumber));
-
-      // Redirect to login if not authenticated
+    const run = async () => {
+      // auth gate
       if (!authLoading && !user) {
         setError("Please log in to view your order.");
-        router.push("/login");
+        router.push("/auth/login");
         return;
       }
 
-      console.log("ConfirmationScreen: Query params:", { idParam, numParam, idIfUuid, orderNumber });
-
-      const qs = orderNumber
-        ? `order_number=${encodeURIComponent(String(orderNumber))}`
-        : idIfUuid
-        ? `id=${encodeURIComponent(String(idIfUuid))}`
-        : "";
-
-      if (qs) {
-        setLoading(true);
-        try {
-          const res = await fetch(`${API_BASE}/order?${qs}`, {
-            headers: { Accept: "application/json", "Cache-Control": "no-store" },
-          });
-          const json = await res.json().catch(() => null);
-
-          if (!res.ok || !json?.ok || !json?.order) {
-            throw new Error(json?.error || `Failed to fetch order (${res.status})`);
-          }
-
-          const theOrder: Order = json.order;
-
-          if (Array.isArray(theOrder.items)) {
-            console.log("Order items:", theOrder.items); // Debug
-            theOrder.items = theOrder.items.map((it: any) => ({
-              id: it.id ?? undefined,
-              name: it.name ?? it.title ?? it.productName ?? it.product_name ?? "Item",
-              quantity: Number(it.quantity ?? it.qty ?? 1),
-              unit_price_cents: Number(it.unit_price_cents ?? (it.price ? Math.round(Number(it.price) * 100) : 0)),
-              line_total_cents: Number(
-                it.line_total_cents ?? (it.line_total ? Math.round(Number(it.line_total) * 100) : undefined)
-              ),
-              product_id: it.product_id ?? it.productId ?? null,
-            }));
-          } else {
-            theOrder.items = [];
-          }
-
-          if (!cancelled) {
-            setOrder(theOrder);
-            setLoading(false);
-            try {
-              await AsyncStorage.setItem("lastOrder", JSON.stringify(theOrder));
-            } catch {}
-          }
-          return;
-        } catch (e: any) {
-          if (!cancelled) {
-            setError(e?.message || String(e));
-            setLoading(false);
-          }
-        }
-      }
-
-      const cached = await readLastOrderFromStorage();
-      if (cached && !cancelled) {
-        setOrder(cached);
-        setLoading(false);
-      } else if (!cancelled) {
-        setLoading(false);
-        if (!orderNumber && !idIfUuid) {
-          setError("Missing order reference in URL.");
-          if (idParam && !isUUID(idParam)) {
-            console.warn(`Invalid orderId: "${idParam}" is not a UUID. Use ?order_number=${idParam} instead.`);
-          }
-        }
-      }
+      await fetchOrder();
     };
 
-    load();
+    if (!cancelled) run();
     return () => {
       cancelled = true;
     };
-  }, [idIfUuid, orderNumber, user, authLoading]);
+  }, [authLoading, user, fetchOrder, router]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchOrder();
+    setRefreshing(false);
+  }, [fetchOrder]);
 
   const handleViewOrders = () => router.push("/account/orders");
   const handleContinue = () => router.push("/");
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <View style={styles.content}>
         <Text style={styles.pageTitle}>Order Confirmed!</Text>
 
-        {authLoading || loading ? (
+        {(authLoading || loading) && (
           <View style={{ marginTop: 24 }}>
             <ActivityIndicator />
           </View>
-        ) : !order ? (
+        )}
+
+        {!loading && (!order || error) && (
           <>
-            {pending && !error ? (
+            {orderNumber && !error && pending ? (
               <Text style={styles.lead}>We’re finishing up your order. This page will update shortly.</Text>
             ) : (
               <Text style={[styles.lead, { color: "#a00" }]}>{error || "No recent order found."}</Text>
             )}
-            <Text style={styles.lead}>
-              If you just completed payment, try returning to the checkout or check your order history.
-            </Text>
+            <View style={{ height: 12 }} />
+            <Pressable style={styles.secondaryBtn} onPress={onRefresh}>
+              <Text style={styles.secondaryBtnText}>Retry</Text>
+            </Pressable>
             <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
               <Text style={styles.secondaryBtnText}>View Order History</Text>
             </Pressable>
@@ -729,7 +746,9 @@ export default function ConfirmationScreen() {
               <Text style={styles.primaryBtnText}>Continue Shopping</Text>
             </Pressable>
           </>
-        ) : (
+        )}
+
+        {!loading && order && !error && (
           <>
             <Text style={styles.lead}>Thanks — your order is confirmed. A confirmation may be emailed to you.</Text>
 
@@ -761,9 +780,9 @@ export default function ConfirmationScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.muted}>Total</Text>
                 <Text style={styles.value}>
-                  {order.total_cents
+                  {order.total_cents != null
                     ? centsToCurrency(order.total_cents, order.currency)
-                    : order.amount
+                    : order.amount != null
                     ? centsToCurrency(order.amount * 100, order.currency)
                     : "N/A"}
                 </Text>

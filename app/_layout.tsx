@@ -68,7 +68,7 @@ import { View, StyleSheet } from "react-native";
 import { Provider as ReduxProvider } from "react-redux";
 import { store } from "@/store";
 import { Stack, usePathname, useRouter } from "expo-router";
-import { AuthProvider } from "../features/auth/AuthProvider";
+import  AuthProvider  from "../features/auth/AuthProvider";
 import Header from "../components/header";
 
 // Deep linking

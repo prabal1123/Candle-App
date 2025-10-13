@@ -84,6 +84,8 @@
 //     return res.status(500).json({ ok: false, error: "Server error" });
 //   }
 // };
+
+// api/order.js
 module.exports.config = { runtime: "nodejs" };
 
 const { createClient } = require("@supabase/supabase-js");
@@ -103,9 +105,9 @@ module.exports = async (req, res) => {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 
   const { id, order_number } = req.query || {};
-  const key = order_number || id;
-
-  if (!key) return res.status(400).json({ ok: false, error: "Provide ?order_number=... or ?id=..." });
+  if (!order_number && !id) {
+    return res.status(400).json({ ok: false, error: "Provide ?order_number=... or ?id=<uuid>" });
+  }
 
   try {
     const supabase = createClient(
@@ -116,24 +118,26 @@ module.exports = async (req, res) => {
 
     let q = supabase.from("orders").select("*").limit(1);
 
-    // Log the key for debugging
-    console.log("Querying order with:", { id, order_number, key });
-
-    // Explicitly prefer order_number if provided
     if (order_number) {
+      // Always prefer order_number for CANDLE-... refs
       q = q.eq("order_number", order_number);
-    } else if (id && isUUID(id)) {
-      q = q.eq("id", id);
     } else {
-      return res.status(400).json({ ok: false, error: "Invalid or missing UUID for id parameter" });
+      // Only accept id if it is a UUID; otherwise guide the client
+      if (!isUUID(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "id must be a UUID. Use ?order_number=CANDLE-... for human-readable ids",
+        });
+      }
+      q = q.eq("id", id);
     }
 
     const { data, error } = await q.single();
 
-    if (error?.message?.includes("No rows")) {
-      return res.status(404).json({ ok: false, error: "Order not found" });
-    }
     if (error) {
+      if (error.message?.includes("No rows")) {
+        return res.status(404).json({ ok: false, error: "Order not found" });
+      }
       console.error("Supabase query error:", error);
       return res.status(500).json({ ok: false, error: error.message });
     }
