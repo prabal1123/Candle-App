@@ -86,6 +86,78 @@
 // };
 
 
+// // api/order.js
+// module.exports.config = { runtime: "nodejs" };
+
+// const { createClient } = require("@supabase/supabase-js");
+
+// function cors(res) {
+//   res.setHeader("Access-Control-Allow-Origin", "*");
+//   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
+//   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+// }
+
+// const isUUID = (s) =>
+//   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || ""));
+
+// module.exports = async (req, res) => {
+//   cors(res);
+//   if (req.method === "OPTIONS") return res.status(200).end();
+//   if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
+
+//   let { id, order_number } = req.query || {};
+
+//   // ✅ If id exists but is not UUID, treat it as order_number
+//   if (!order_number && id && !isUUID(id)) {
+//     order_number = id;
+//     id = undefined;
+//   }
+
+//   // ✅ Require at least one of order_number or valid UUID id
+//   if (!order_number && (!id || !isUUID(id))) {
+//     return res.status(400).json({ ok: false, error: "Provide ?order_number=... or a valid ?id=<uuid>" });
+//   }
+
+//   try {
+//     const supabase = createClient(
+//       process.env.SUPABASE_URL,
+//       process.env.SUPABASE_SERVICE_ROLE_KEY,
+//       { auth: { persistSession: false } }
+//     );
+
+//     let q = supabase.from("orders").select("*");
+
+//   if (order_number) {
+//     q = q
+//       .eq("order_number", String(order_number))
+//       .order("created_at", { ascending: false }) // 👈 prefer newest
+//       .limit(1)
+//       .maybeSingle();
+//   } else if (id && isUUID(id)) {
+//     q = q.eq("id", String(id)).limit(1).maybeSingle();
+//   }
+
+// const { data, error } = await q;
+
+
+//     if (error) {
+//       if (error.message?.includes("No rows")) {
+//         return res.status(404).json({ ok: false, error: "Order not found" });
+//       }
+//       console.error("Supabase query error:", error);
+//       return res.status(500).json({ ok: false, error: error.message });
+//     }
+
+//     res.setHeader("Cache-Control", "no-store, max-age=0");
+//     return res.status(200).json({ ok: true, order: data });
+//   } catch (e) {
+//     console.error("/api/order error:", e);
+//     return res.status(500).json({ ok: false, error: "Server error" });
+//   }
+// };
+
+
+
 // api/order.js
 module.exports.config = { runtime: "nodejs" };
 
@@ -106,14 +178,7 @@ module.exports = async (req, res) => {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 
   let { id, order_number } = req.query || {};
-
-  // ✅ If id exists but is not UUID, treat it as order_number
-  if (!order_number && id && !isUUID(id)) {
-    order_number = id;
-    id = undefined;
-  }
-
-  // ✅ Require at least one of order_number or valid UUID id
+  if (!order_number && id && !isUUID(id)) { order_number = id; id = undefined; }
   if (!order_number && (!id || !isUUID(id))) {
     return res.status(400).json({ ok: false, error: "Provide ?order_number=... or a valid ?id=<uuid>" });
   }
@@ -121,24 +186,18 @@ module.exports = async (req, res) => {
   try {
     const supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_SERVICE_ROLE_KEY, // server-side only
       { auth: { persistSession: false } }
     );
 
     let q = supabase.from("orders").select("*");
+    if (order_number) {
+      q = q.eq("order_number", String(order_number)).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    } else if (id && isUUID(id)) {
+      q = q.eq("id", String(id)).limit(1).maybeSingle();
+    }
 
-  if (order_number) {
-    q = q
-      .eq("order_number", String(order_number))
-      .order("created_at", { ascending: false }) // 👈 prefer newest
-      .limit(1)
-      .maybeSingle();
-  } else if (id && isUUID(id)) {
-    q = q.eq("id", String(id)).limit(1).maybeSingle();
-  }
-
-const { data, error } = await q;
-
+    const { data, error } = await q;
 
     if (error) {
       if (error.message?.includes("No rows")) {
@@ -147,6 +206,8 @@ const { data, error } = await q;
       console.error("Supabase query error:", error);
       return res.status(500).json({ ok: false, error: error.message });
     }
+
+    if (!data) return res.status(404).json({ ok: false, error: "Order not found" });
 
     res.setHeader("Cache-Control", "no-store, max-age=0");
     return res.status(200).json({ ok: true, order: data });

@@ -314,18 +314,141 @@
 
 
 
+// // api/razorpay-callback.js
+// module.exports.config = { runtime: "nodejs" };
+
+// const crypto = require("crypto");
+// const Razorpay = require("razorpay");
+// const { createClient } = require("@supabase/supabase-js");
+
+// function parseFormOrJson(req) {
+//   const ct = req.headers["content-type"] || "";
+//   const isForm = ct.includes("application/x-www-form-urlencoded");
+//   const body = req.body;
+
+//   if (isForm) {
+//     if (typeof body === "string") return Object.fromEntries(new URLSearchParams(body));
+//     if (Buffer.isBuffer(body)) return Object.fromEntries(new URLSearchParams(body.toString("utf8")));
+//     if (body && typeof body === "object") return body;
+//     return {};
+//   }
+//   if (typeof body === "string") { try { return JSON.parse(body); } catch { return {}; } }
+//   if (Buffer.isBuffer(body))     { try { return JSON.parse(body.toString("utf8")); } catch { return {}; } }
+//   return body || {};
+// }
+
+// function verifySignature({ order_id, payment_id, signature, key_secret }) {
+//   const payload = `${order_id}|${payment_id}`;
+//   const expected = crypto.createHmac("sha256", key_secret).update(payload).digest("hex");
+//   return expected === signature;
+// }
+
+// function getOrigin(req) {
+//   const proto = req.headers["x-forwarded-proto"] || "https";
+//   const host  = req.headers["x-forwarded-host"] || req.headers.host;
+//   return host ? `${proto}://${host}` : "";
+// }
+
+// module.exports = async (req, res) => {
+//   try {
+//     const p = parseFormOrJson(req);
+
+//     const orderId   = p.razorpay_order_id || p.order_id;
+//     const paymentId = p.razorpay_payment_id || p.payment_id;
+//     const signature = p.razorpay_signature || p.signature;
+
+//     const key_id     = process.env.RAZORPAY_KEY_ID;
+//     const key_secret = process.env.RAZORPAY_KEY_SECRET;
+//     if (!key_id || !key_secret) return res.status(500).send("Razorpay keys missing");
+
+//     if (!orderId || !paymentId || !signature) {
+//       console.error("Callback missing fields:", { orderId, paymentId, hasSig: !!signature });
+//       return res.status(400).send("Missing Razorpay fields");
+//     }
+
+//     const ok = verifySignature({ order_id: orderId, payment_id: paymentId, signature, key_secret });
+
+//     // Fetch order from Razorpay (to get receipt + amount + notes)
+//     const rzp = new Razorpay({ key_id, key_secret });
+//     const rzpOrder = await rzp.orders.fetch(orderId).catch((e) => {
+//       console.error("Razorpay fetch order failed:", e?.error || e);
+//       return null;
+//     });
+
+//     const amountPaise = Number(rzpOrder?.amount);
+//     const totalPaise  = Number.isFinite(amountPaise) ? Math.floor(amountPaise) : 0; // NOT NULL guard
+//     const currency    = rzpOrder?.currency || "INR";
+//     const receipt     = rzpOrder?.receipt || null; // your order_number from create-order
+//     const notesObj    = (rzpOrder && typeof rzpOrder.notes === "object") ? rzpOrder.notes : {};
+
+//     // Build order payload for DB
+//     const orderNumber = receipt || `CANDLE-${Date.now()}`;
+//     const nowIso = new Date().toISOString();
+//     const payload = {
+//       user_id: notesObj.user_id ?? null,
+//       order_number: orderNumber,
+//       status: ok ? "paid" : "failed",      // ensure enum has these values
+//       total_cents: totalPaise,             // paise (integer, NOT NULL in schema)
+//       currency,
+//       shipping_address: notesObj.shipping_address ?? null,
+//       estimated_delivery: null,
+//       items: notesObj.items ?? null,
+//       customer_name: notesObj.customer_name ?? null,
+//       razorpay_order_id: orderId,
+//       razorpay_payment_id: paymentId,
+//       amount: Math.round(totalPaise / 100), // rupees (integer)
+//       notes: { ...(notesObj || {}) },
+//       phone: notesObj.phone ?? null,
+//       updated_at: nowIso,                  // keep updated_at fresh
+//     };
+
+//     // Idempotent write based on unique(order_number)
+//     const supabase = createClient(
+//       process.env.SUPABASE_URL,
+//       process.env.SUPABASE_SERVICE_ROLE_KEY,
+//       { auth: { persistSession: false } }
+//     );
+
+//     const { error: upsertErr } = await supabase
+//       .from("orders")
+//       .upsert(payload, { onConflict: "order_number", ignoreDuplicates: false })
+//       .select("id")
+//       .single();
+
+//     if (upsertErr) {
+//       console.error("Supabase upsert error:", upsertErr);
+//       // continue to redirect; user shouldn’t be stuck at gateway
+//     }
+
+//     // Redirect with order_number (never with id to avoid UUID confusion)
+//     const site = (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
+//     const params = new URLSearchParams({ order_number: orderNumber });
+
+//     const successUrl = `${site}/confirmation?${params.toString()}`;
+//     const failUrl    = `${site}/payment/failed?${params.toString()}`;
+
+//     res.setHeader("Cache-Control", "no-store, max-age=0");
+//     res.statusCode = 303; // POST->GET redirect
+//     res.setHeader("Location", ok ? successUrl : failUrl);
+//     res.end();
+//   } catch (err) {
+//     console.error("razorpay-callback error:", err);
+//     res.status(500).send("Callback error");
+//   }
+// };
+
+
+
 // api/razorpay-callback.js
 module.exports.config = { runtime: "nodejs" };
 
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
-const { createClient } = require("@supabase/supabase-js");
 
 function parseFormOrJson(req) {
   const ct = req.headers["content-type"] || "";
   const isForm = ct.includes("application/x-www-form-urlencoded");
   const body = req.body;
-
   if (isForm) {
     if (typeof body === "string") return Object.fromEntries(new URLSearchParams(body));
     if (Buffer.isBuffer(body)) return Object.fromEntries(new URLSearchParams(body.toString("utf8")));
@@ -337,12 +460,6 @@ function parseFormOrJson(req) {
   return body || {};
 }
 
-function verifySignature({ order_id, payment_id, signature, key_secret }) {
-  const payload = `${order_id}|${payment_id}`;
-  const expected = crypto.createHmac("sha256", key_secret).update(payload).digest("hex");
-  return expected === signature;
-}
-
 function getOrigin(req) {
   const proto = req.headers["x-forwarded-proto"] || "https";
   const host  = req.headers["x-forwarded-host"] || req.headers.host;
@@ -352,7 +469,6 @@ function getOrigin(req) {
 module.exports = async (req, res) => {
   try {
     const p = parseFormOrJson(req);
-
     const orderId   = p.razorpay_order_id || p.order_id;
     const paymentId = p.razorpay_payment_id || p.payment_id;
     const signature = p.razorpay_signature || p.signature;
@@ -361,75 +477,28 @@ module.exports = async (req, res) => {
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
     if (!key_id || !key_secret) return res.status(500).send("Razorpay keys missing");
 
+    // (Optional) verify quickly only for routing; DB write happens in /verify-payment
     if (!orderId || !paymentId || !signature) {
       console.error("Callback missing fields:", { orderId, paymentId, hasSig: !!signature });
-      return res.status(400).send("Missing Razorpay fields");
     }
 
-    const ok = verifySignature({ order_id: orderId, payment_id: paymentId, signature, key_secret });
-
-    // Fetch order from Razorpay (to get receipt + amount + notes)
-    const rzp = new Razorpay({ key_id, key_secret });
-    const rzpOrder = await rzp.orders.fetch(orderId).catch((e) => {
-      console.error("Razorpay fetch order failed:", e?.error || e);
-      return null;
-    });
-
-    const amountPaise = Number(rzpOrder?.amount);
-    const totalPaise  = Number.isFinite(amountPaise) ? Math.floor(amountPaise) : 0; // NOT NULL guard
-    const currency    = rzpOrder?.currency || "INR";
-    const receipt     = rzpOrder?.receipt || null; // your order_number from create-order
-    const notesObj    = (rzpOrder && typeof rzpOrder.notes === "object") ? rzpOrder.notes : {};
-
-    // Build order payload for DB
-    const orderNumber = receipt || `CANDLE-${Date.now()}`;
-    const nowIso = new Date().toISOString();
-    const payload = {
-      user_id: notesObj.user_id ?? null,
-      order_number: orderNumber,
-      status: ok ? "paid" : "failed",      // ensure enum has these values
-      total_cents: totalPaise,             // paise (integer, NOT NULL in schema)
-      currency,
-      shipping_address: notesObj.shipping_address ?? null,
-      estimated_delivery: null,
-      items: notesObj.items ?? null,
-      customer_name: notesObj.customer_name ?? null,
-      razorpay_order_id: orderId,
-      razorpay_payment_id: paymentId,
-      amount: Math.round(totalPaise / 100), // rupees (integer)
-      notes: { ...(notesObj || {}) },
-      phone: notesObj.phone ?? null,
-      updated_at: nowIso,                  // keep updated_at fresh
-    };
-
-    // Idempotent write based on unique(order_number)
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      { auth: { persistSession: false } }
-    );
-
-    const { error: upsertErr } = await supabase
-      .from("orders")
-      .upsert(payload, { onConflict: "order_number", ignoreDuplicates: false })
-      .select("id")
-      .single();
-
-    if (upsertErr) {
-      console.error("Supabase upsert error:", upsertErr);
-      // continue to redirect; user shouldn’t be stuck at gateway
+    // Fetch order to read its receipt (your order_number)
+    let receipt = null;
+    try {
+      const rzp = new Razorpay({ key_id, key_secret });
+      const rzpOrder = await rzp.orders.fetch(orderId);
+      receipt = rzpOrder?.receipt || null;
+    } catch (e) {
+      console.error("Razorpay fetch in callback failed:", e?.error || e);
     }
 
-    // Redirect with order_number (never with id to avoid UUID confusion)
     const site = (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
-    const params = new URLSearchParams({ order_number: orderNumber });
-
-    const successUrl = `${site}/confirmation?${params.toString()}`;
-    const failUrl    = `${site}/payment/failed?${params.toString()}`;
+    const params = new URLSearchParams();
+    if (receipt) params.set("order_number", receipt);
 
     res.setHeader("Cache-Control", "no-store, max-age=0");
-    res.statusCode = 303; // POST->GET redirect
-    res.setHeader("Location", ok ? successUrl : failUrl);
+    res.statusCode = 303; // POST -> GET
+    res.setHeader("Location", `${site}/confirmation?${params.toString()}`);
     res.end();
   } catch (err) {
     console.error("razorpay-callback error:", err);

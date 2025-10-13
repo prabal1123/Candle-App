@@ -111,7 +111,109 @@
 // };
 
 
-// /api/verify-payment.js
+// // /api/verify-payment.js
+// const crypto = require("crypto");
+// const Razorpay = require("razorpay");
+// const { createClient } = require("@supabase/supabase-js");
+
+// function cors(res) {
+//   res.setHeader("Access-Control-Allow-Origin", "*");
+//   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
+//   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+// }
+
+// module.exports = async (req, res) => {
+//   cors(res);
+//   if (req.method === "OPTIONS") return res.status(200).end();
+//   if (req.method !== "POST") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
+
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       local_receipt,
+//       user_id,
+//       items,
+//       shipping_address,
+//       customer_name,
+//       phone,
+//       notes
+//     } = req.body || {};
+
+//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+//       return res.status(400).json({ ok: false, error: "Missing razorpay fields" });
+//     }
+
+//     const expected = crypto
+//       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+//       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+//       .digest("hex");
+//     if (expected !== razorpay_signature) {
+//       return res.status(400).json({ ok: false, error: "Invalid signature" });
+//     }
+
+//     const rzp = new Razorpay({
+//       key_id: process.env.RAZORPAY_KEY_ID,
+//       key_secret: process.env.RAZORPAY_KEY_SECRET
+//     });
+//     const rzpOrder = await rzp.orders.fetch(razorpay_order_id);
+//     const total_cents = Number(rzpOrder?.amount);
+//     const currency = rzpOrder?.currency || "INR";
+//     const order_number = local_receipt || rzpOrder?.receipt || `CANDLE-${Date.now()}`;
+
+//     if (!Number.isFinite(total_cents) || total_cents <= 0) {
+//       return res.status(400).json({ ok: false, error: "Unable to determine order amount" });
+//     }
+
+//     const amount = Math.round(total_cents / 100);
+
+//     const orderPayload = {
+//       user_id: user_id || null,
+//       order_number,
+//       status: "paid",
+//       total_cents,
+//       currency,
+//       shipping_address: shipping_address || null,
+//       estimated_delivery: null,
+//       items: items ?? null,
+//       customer_name: customer_name || null,
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       amount,
+//       notes: typeof notes === "object" && notes !== null ? notes : (notes ? { notes } : {}),
+//       phone: phone || null
+//     };
+
+//     Object.keys(orderPayload).forEach((k) => orderPayload[k] === undefined && delete orderPayload[k]);
+
+//     const supabase = createClient(
+//       process.env.SUPABASE_URL,
+//       process.env.SUPABASE_SERVICE_ROLE_KEY,
+//       { auth: { persistSession: false } }
+//     );
+
+//     const { data, error } = await supabase
+//       .from("orders")
+//       .insert(orderPayload)
+//       .select("id, order_number")
+//       .single();
+
+//     if (error) throw error;
+//     if (!data?.id) return res.status(500).json({ ok: false, error: "Insert succeeded but id missing" });
+
+//     return res.status(200).json({ ok: true, orderId: data.id, order_number: data.order_number });
+//   } catch (err) {
+//     console.error("verify-payment error:", err);
+//     return res.status(500).json({ ok: false, error: err.message || String(err) });
+//   }
+// };
+
+
+
+// api/verify-payment.js
+module.exports.config = { runtime: "nodejs" };
+
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
 const { createClient } = require("@supabase/supabase-js");
@@ -128,64 +230,52 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 
   try {
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      local_receipt,
+      local_receipt,              // 👈 keep stable order_number from client
       user_id,
       items,
       shipping_address,
       customer_name,
       phone,
       notes
-    } = req.body || {};
+    } = body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ ok: false, error: "Missing razorpay fields" });
+      return res.status(400).json({ ok: false, error: "Missing Razorpay fields" });
     }
 
+    const key_id = process.env.RAZORPAY_KEY_ID;
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!key_id || !key_secret) return res.status(500).json({ ok: false, error: "Razorpay keys missing" });
+
+    // Verify signature
     const expected = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .createHmac("sha256", key_secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
     if (expected !== razorpay_signature) {
       return res.status(400).json({ ok: false, error: "Invalid signature" });
     }
 
-    const rzp = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET
-    });
+    // Fetch Razorpay order to read receipt/amount/currency
+    const rzp = new Razorpay({ key_id, key_secret });
     const rzpOrder = await rzp.orders.fetch(razorpay_order_id);
-    const total_cents = Number(rzpOrder?.amount);
+    const total_paise = Number(rzpOrder?.amount);
+    if (!Number.isFinite(total_paise) || total_paise <= 0) {
+      return res.status(400).json({ ok: false, error: "Unable to determine order amount" });
+    }
     const currency = rzpOrder?.currency || "INR";
     const order_number = local_receipt || rzpOrder?.receipt || `CANDLE-${Date.now()}`;
 
-    if (!Number.isFinite(total_cents) || total_cents <= 0) {
-      return res.status(400).json({ ok: false, error: "Unable to determine order amount" });
-    }
-
-    const amount = Math.round(total_cents / 100);
-
-    const orderPayload = {
-      user_id: user_id || null,
-      order_number,
-      status: "paid",
-      total_cents,
-      currency,
-      shipping_address: shipping_address || null,
-      estimated_delivery: null,
-      items: items ?? null,
-      customer_name: customer_name || null,
-      razorpay_order_id,
-      razorpay_payment_id,
-      amount,
-      notes: typeof notes === "object" && notes !== null ? notes : (notes ? { notes } : {}),
-      phone: phone || null
-    };
-
-    Object.keys(orderPayload).forEach((k) => orderPayload[k] === undefined && delete orderPayload[k]);
+    // Map to totals schema (optional: adjust to your DB)
+    const subtotal = total_paise / 100;
+    const tax = 0;
+    const shipping = 0;
+    const total = subtotal + tax + shipping;
 
     const supabase = createClient(
       process.env.SUPABASE_URL,
@@ -193,14 +283,33 @@ module.exports = async (req, res) => {
       { auth: { persistSession: false } }
     );
 
+    // Idempotent: unique(order_number) enforced in DB
+    const payload = {
+      user_id: user_id || null,
+      order_number,
+      status: "paid",
+      subtotal, tax, shipping, total,
+      currency,
+      address: shipping_address || null, // ensure column type jsonb
+      items: items ?? null,              // if you store items inline; or write to order_items table
+      customer_name: customer_name || null,
+      phone: phone || null,
+      razorpay_order_id,
+      payment_id: razorpay_payment_id,
+      payment_status: "paid"
+    };
+
     const { data, error } = await supabase
       .from("orders")
-      .insert(orderPayload)
+      .upsert(payload, { onConflict: "order_number", ignoreDuplicates: false }) // 👈 idempotent
       .select("id, order_number")
       .single();
 
-    if (error) throw error;
-    if (!data?.id) return res.status(500).json({ ok: false, error: "Insert succeeded but id missing" });
+    if (error) {
+      console.error("orders upsert error:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+    if (!data?.id) return res.status(500).json({ ok: false, error: "Order write missing id" });
 
     return res.status(200).json({ ok: true, orderId: data.id, order_number: data.order_number });
   } catch (err) {
