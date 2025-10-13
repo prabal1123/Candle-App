@@ -84,7 +84,6 @@
 //     return res.status(500).json({ ok: false, error: "Server error" });
 //   }
 // };
-
 // api/order.js
 module.exports.config = { runtime: "nodejs" };
 
@@ -104,7 +103,14 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: `Method ${req.method} not allowed` });
 
-  const { id, order_number } = req.query || {};
+  let { id, order_number } = req.query || {};
+
+  // SAFETY NET: if id is present but not UUID, treat it as order_number
+  if (!order_number && id && !isUUID(id)) {
+    order_number = id;
+    id = undefined;
+  }
+
   if (!order_number && !id) {
     return res.status(400).json({ ok: false, error: "Provide ?order_number=... or ?id=<uuid>" });
   }
@@ -119,17 +125,11 @@ module.exports = async (req, res) => {
     let q = supabase.from("orders").select("*").limit(1);
 
     if (order_number) {
-      // Always prefer order_number for CANDLE-... refs
       q = q.eq("order_number", order_number);
-    } else {
-      // Only accept id if it is a UUID; otherwise guide the client
-      if (!isUUID(id)) {
-        return res.status(400).json({
-          ok: false,
-          error: "id must be a UUID. Use ?order_number=CANDLE-... for human-readable ids",
-        });
-      }
+    } else if (id && isUUID(id)) {
       q = q.eq("id", id);
+    } else {
+      return res.status(400).json({ ok: false, error: "id must be a UUID" });
     }
 
     const { data, error } = await q.single();
