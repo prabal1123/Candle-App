@@ -125,15 +125,20 @@ module.exports = async (req, res) => {
       { auth: { persistSession: false } }
     );
 
-    let q = supabase.from("orders").select("*").limit(1);
+    let q = supabase.from("orders").select("*");
 
-    if (order_number) {
-      q = q.eq("order_number", String(order_number));
-    } else if (id && isUUID(id)) {
-      q = q.eq("id", String(id));
-    }
+  if (order_number) {
+    q = q
+      .eq("order_number", String(order_number))
+      .order("created_at", { ascending: false }) // 👈 prefer newest
+      .limit(1)
+      .maybeSingle();
+  } else if (id && isUUID(id)) {
+    q = q.eq("id", String(id)).limit(1).maybeSingle();
+  }
 
-    const { data, error } = await q.single();
+const { data, error } = await q;
+
 
     if (error) {
       if (error.message?.includes("No rows")) {
