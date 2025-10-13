@@ -528,18 +528,17 @@
 //   );
 // }
 
-
-
-
 // app/confirmation.tsx
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "../features/auth/AuthProvider";
 import { confirmationStyles as styles } from "@/styles/confirmationStyles";
 
 function getApiBase() {
   const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv; // e.g. https://candle-app-lac.vercel.app/api
+  if (fromEnv) return fromEnv;
   if (typeof window !== "undefined") return `${window.location.origin}/api`;
   return "https://candle-app-lac.vercel.app/api";
 }
@@ -552,9 +551,6 @@ type OrderItem = {
   unit_price_cents?: number;
   line_total_cents?: number;
   product_id?: string | null;
-  qty?: number;
-  price?: number;
-  productId?: string | number;
 };
 
 type Order = {
@@ -567,8 +563,7 @@ type Order = {
   created_at?: string;
   shipping_address?: string;
   amount?: number;
-  items?: any[];
-  order_items?: OrderItem[];
+  items?: OrderItem[];
   phone?: string;
 };
 
@@ -586,8 +581,12 @@ function centsToCurrency(cents?: number, currency = "INR") {
 
 export default function ConfirmationScreen() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const [loading, setLoading] = useState<boolean>(false);
+  const [order, setOrder] = useState<Order | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // --- Read query params robustly ------------------------------------------
+  // Read query params
   let idParam: string | null = null;
   let numParam: string | null = null;
   let pendingFromQuery: string | null = null;
@@ -599,19 +598,13 @@ export default function ConfirmationScreen() {
     pendingFromQuery = sp.get("pending");
   }
 
-  // If idParam is a UUID → treat as id; if NOT UUID but present → it’s actually an order_number.
   const idIfUuid = isUUID(idParam) ? idParam : null;
-  const orderNumber = numParam || (!isUUID(idParam) ? idParam : null);
+  const orderNumber = numParam || (!isUUID(idParam) && idParam ? idParam : null);
   const pending = pendingFromQuery === "true";
 
-  const [loading, setLoading] = useState<boolean>(!!(idIfUuid || orderNumber));
-  const [order, setOrder] = useState<Order | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const readLastOrderFromSession = (): Order | null => {
+  const readLastOrderFromStorage = async (): Promise<Order | null> => {
     try {
-      if (typeof window === "undefined") return null;
-      const raw = sessionStorage.getItem("lastOrder");
+      const raw = await AsyncStorage.getItem("lastOrder");
       return raw ? (JSON.parse(raw) as Order) : null;
     } catch {
       return null;
@@ -623,12 +616,21 @@ export default function ConfirmationScreen() {
 
     const load = async () => {
       setError(null);
+      setLoading(!!(idIfUuid || orderNumber));
 
-      // Build querystring safely
-      const qs = idIfUuid
-        ? `id=${encodeURIComponent(String(idIfUuid))}`
-        : orderNumber
+      // Redirect to login if not authenticated
+      if (!authLoading && !user) {
+        setError("Please log in to view your order.");
+        router.push("/login");
+        return;
+      }
+
+      console.log("ConfirmationScreen: Query params:", { idParam, numParam, idIfUuid, orderNumber });
+
+      const qs = orderNumber
         ? `order_number=${encodeURIComponent(String(orderNumber))}`
+        : idIfUuid
+        ? `id=${encodeURIComponent(String(idIfUuid))}`
         : "";
 
       if (qs) {
@@ -645,25 +647,27 @@ export default function ConfirmationScreen() {
 
           const theOrder: Order = json.order;
 
-          // Normalize items → order_items if needed
-          if (!theOrder.order_items && Array.isArray(theOrder.items)) {
-            theOrder.order_items = theOrder.items.map((it: any) => ({
+          if (Array.isArray(theOrder.items)) {
+            console.log("Order items:", theOrder.items); // Debug
+            theOrder.items = theOrder.items.map((it: any) => ({
               id: it.id ?? undefined,
               name: it.name ?? it.title ?? it.productName ?? it.product_name ?? "Item",
-              quantity: it.quantity ?? it.qty ?? 1,
-              unit_price_cents:
-                it.unit_price_cents ?? (it.price ? Math.round(Number(it.price) * 100) : undefined),
-              line_total_cents:
-                it.line_total_cents ?? (it.line_total ? Math.round(Number(it.line_total) * 100) : undefined),
+              quantity: Number(it.quantity ?? it.qty ?? 1),
+              unit_price_cents: Number(it.unit_price_cents ?? (it.price ? Math.round(Number(it.price) * 100) : 0)),
+              line_total_cents: Number(
+                it.line_total_cents ?? (it.line_total ? Math.round(Number(it.line_total) * 100) : undefined)
+              ),
               product_id: it.product_id ?? it.productId ?? null,
-            })) as OrderItem[];
+            }));
+          } else {
+            theOrder.items = [];
           }
 
           if (!cancelled) {
             setOrder(theOrder);
             setLoading(false);
             try {
-              if (typeof window !== "undefined") sessionStorage.setItem("lastOrder", JSON.stringify(theOrder));
+              await AsyncStorage.setItem("lastOrder", JSON.stringify(theOrder));
             } catch {}
           }
           return;
@@ -675,8 +679,7 @@ export default function ConfirmationScreen() {
         }
       }
 
-      // Fallback to session cache
-      const cached = readLastOrderFromSession();
+      const cached = await readLastOrderFromStorage();
       if (cached && !cancelled) {
         setOrder(cached);
         setLoading(false);
@@ -684,9 +687,8 @@ export default function ConfirmationScreen() {
         setLoading(false);
         if (!orderNumber && !idIfUuid) {
           setError("Missing order reference in URL.");
-          // Optional: console hint for old links
-          if (typeof window !== "undefined" && idParam && !isUUID(idParam)) {
-            console.warn("Deprecated: 'orderId' contains non-UUID. Treating as order_number would fix the link.");
+          if (idParam && !isUUID(idParam)) {
+            console.warn(`Invalid orderId: "${idParam}" is not a UUID. Use ?order_number=${idParam} instead.`);
           }
         }
       }
@@ -696,7 +698,7 @@ export default function ConfirmationScreen() {
     return () => {
       cancelled = true;
     };
-  }, [idIfUuid, orderNumber]);
+  }, [idIfUuid, orderNumber, user, authLoading]);
 
   const handleViewOrders = () => router.push("/account/orders");
   const handleContinue = () => router.push("/");
@@ -706,30 +708,26 @@ export default function ConfirmationScreen() {
       <View style={styles.content}>
         <Text style={styles.pageTitle}>Order Confirmed!</Text>
 
-        {!order ? (
+        {authLoading || loading ? (
+          <View style={{ marginTop: 24 }}>
+            <ActivityIndicator />
+          </View>
+        ) : !order ? (
           <>
-            {loading ? (
-              <View style={{ marginTop: 24 }}>
-                <ActivityIndicator />
-              </View>
+            {pending && !error ? (
+              <Text style={styles.lead}>We’re finishing up your order. This page will update shortly.</Text>
             ) : (
-              <>
-                {pending && !error ? (
-                  <Text style={styles.lead}>We’re finishing up your order. This page will update shortly.</Text>
-                ) : (
-                  <Text style={[styles.lead, { color: "#a00" }]}>{error || "No recent order found."}</Text>
-                )}
-                <Text style={styles.lead}>
-                  If you just completed payment, try returning to the checkout or check your order history.
-                </Text>
-                <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-                  <Text style={styles.secondaryBtnText}>View Order History</Text>
-                </Pressable>
-                <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-                  <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-                </Pressable>
-              </>
+              <Text style={[styles.lead, { color: "#a00" }]}>{error || "No recent order found."}</Text>
             )}
+            <Text style={styles.lead}>
+              If you just completed payment, try returning to the checkout or check your order history.
+            </Text>
+            <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
+              <Text style={styles.secondaryBtnText}>View Order History</Text>
+            </Pressable>
+            <Pressable style={styles.primaryBtn} onPress={handleContinue}>
+              <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+            </Pressable>
           </>
         ) : (
           <>
@@ -739,36 +737,23 @@ export default function ConfirmationScreen() {
             <View style={styles.summary}>
               <View style={styles.summaryRow}>
                 <Text style={styles.muted}>Order Number</Text>
-                <Text style={styles.value}>#{order.order_number ?? order.id}</Text>
+                <Text style={styles.value}>#{order.order_number ?? order.id ?? "N/A"}</Text>
               </View>
 
               <View style={styles.summaryRow}>
                 <Text style={styles.muted}>Items</Text>
                 <View style={{ maxWidth: "60%" }}>
-                  {Array.isArray(order.order_items) && order.order_items.length > 0 ? (
-                    order.order_items.map((it: OrderItem, idx: number) => (
+                  {Array.isArray(order.items) && order.items.length > 0 ? (
+                    order.items.map((it: OrderItem, idx: number) => (
                       <Text key={it.id ?? idx} style={styles.value}>
                         {it.name ?? "Item"} × {it.quantity ?? 1} —{" "}
                         {it.unit_price_cents !== undefined
                           ? centsToCurrency(it.unit_price_cents, order.currency)
-                          : it.price
-                          ? `₹${Number(it.price).toFixed(2)}`
-                          : ""}
-                      </Text>
-                    ))
-                  ) : Array.isArray(order.items) && order.items.length > 0 ? (
-                    order.items.map((it: any, idx: number) => (
-                      <Text key={idx} style={styles.value}>
-                        {(it.name ?? it.title ?? "Item")} × {it.quantity ?? it.qty ?? 1} —{" "}
-                        {it.unit_price_cents !== undefined
-                          ? centsToCurrency(it.unit_price_cents, order.currency)
-                          : it.price
-                          ? `₹${Number(it.price).toFixed(2)}`
-                          : ""}
+                          : "N/A"}
                       </Text>
                     ))
                   ) : (
-                    <Text style={styles.value}>— Details in order history</Text>
+                    <Text style={styles.value}>No items found</Text>
                   )}
                 </View>
               </View>
@@ -779,19 +764,19 @@ export default function ConfirmationScreen() {
                   {order.total_cents
                     ? centsToCurrency(order.total_cents, order.currency)
                     : order.amount
-                    ? `₹${Number(order.amount).toFixed(2)}`
-                    : "—"}
+                    ? centsToCurrency(order.amount * 100, order.currency)
+                    : "N/A"}
                 </Text>
               </View>
 
               <View style={styles.summaryRow}>
                 <Text style={styles.muted}>Shipping Address</Text>
-                <Text style={styles.value}>{order.shipping_address ?? "—"}</Text>
+                <Text style={styles.value}>{order.shipping_address ?? "N/A"}</Text>
               </View>
 
               <View style={styles.summaryRow}>
                 <Text style={styles.muted}>Status</Text>
-                <Text style={styles.value}>{order.status ?? "—"}</Text>
+                <Text style={styles.value}>{order.status ?? "N/A"}</Text>
               </View>
             </View>
 

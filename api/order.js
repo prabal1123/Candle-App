@@ -84,7 +84,6 @@
 //     return res.status(500).json({ ok: false, error: "Server error" });
 //   }
 // };
-// /api/order.js
 module.exports.config = { runtime: "nodejs" };
 
 const { createClient } = require("@supabase/supabase-js");
@@ -96,8 +95,7 @@ function cors(res) {
 }
 
 const isUUID = (s) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    .test(String(s || ""));
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || ""));
 
 module.exports = async (req, res) => {
   cors(res);
@@ -106,7 +104,8 @@ module.exports = async (req, res) => {
 
   const { id, order_number } = req.query || {};
   const key = order_number || id;
-  if (!key) return res.status(400).json({ ok: false, error: "Provide ?order_number=..." });
+
+  if (!key) return res.status(400).json({ ok: false, error: "Provide ?order_number=... or ?id=..." });
 
   try {
     const supabase = createClient(
@@ -116,14 +115,28 @@ module.exports = async (req, res) => {
     );
 
     let q = supabase.from("orders").select("*").limit(1);
-    q = isUUID(key) ? q.eq("id", key) : q.eq("order_number", key);
+
+    // Log the key for debugging
+    console.log("Querying order with:", { id, order_number, key });
+
+    // Explicitly prefer order_number if provided
+    if (order_number) {
+      q = q.eq("order_number", order_number);
+    } else if (id && isUUID(id)) {
+      q = q.eq("id", id);
+    } else {
+      return res.status(400).json({ ok: false, error: "Invalid or missing UUID for id parameter" });
+    }
 
     const { data, error } = await q.single();
 
     if (error?.message?.includes("No rows")) {
       return res.status(404).json({ ok: false, error: "Order not found" });
     }
-    if (error) return res.status(500).json({ ok: false, error: error.message });
+    if (error) {
+      console.error("Supabase query error:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
 
     res.setHeader("Cache-Control", "no-store, max-age=0");
     return res.status(200).json({ ok: true, order: data });
