@@ -531,9 +531,6 @@
 
 
 
-
-
-
 // app/confirmation.tsx
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
@@ -590,23 +587,24 @@ function centsToCurrency(cents?: number, currency = "INR") {
 export default function ConfirmationScreen() {
   const router = useRouter();
 
-  // read from query (?orderId= & order_number= & pending=)
-  let orderIdFromQuery: string | null = null;
-  let orderNumberFromQuery: string | null = null;
+  // --- Read query params robustly ------------------------------------------
+  let idParam: string | null = null;
+  let numParam: string | null = null;
   let pendingFromQuery: string | null = null;
 
   if (typeof window !== "undefined" && window.location?.search) {
     const sp = new URLSearchParams(window.location.search);
-    orderIdFromQuery = sp.get("orderId") ?? sp.get("order_id");
-    orderNumberFromQuery = sp.get("order_number") ?? sp.get("orderNumber");
+    idParam = sp.get("orderId") ?? sp.get("order_id");
+    numParam = sp.get("order_number") ?? sp.get("orderNumber");
     pendingFromQuery = sp.get("pending");
   }
 
-  const orderId = orderIdFromQuery ?? null;
-  const orderNumber = orderNumberFromQuery ?? null;
+  // If idParam is a UUID → treat as id; if NOT UUID but present → it’s actually an order_number.
+  const idIfUuid = isUUID(idParam) ? idParam : null;
+  const orderNumber = numParam || (!isUUID(idParam) ? idParam : null);
   const pending = pendingFromQuery === "true";
 
-  const [loading, setLoading] = useState<boolean>(!!(orderId || orderNumber));
+  const [loading, setLoading] = useState<boolean>(!!(idIfUuid || orderNumber));
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -626,18 +624,19 @@ export default function ConfirmationScreen() {
     const load = async () => {
       setError(null);
 
-      // choose safe query param: id only if it's a valid UUID; else use order_number
-      const useId = isUUID(orderId);
-      const useOrderNumber = !useId && !!orderNumber;
+      // Build querystring safely
+      const qs = idIfUuid
+        ? `id=${encodeURIComponent(String(idIfUuid))}`
+        : orderNumber
+        ? `order_number=${encodeURIComponent(String(orderNumber))}`
+        : "";
 
-      if (useId || useOrderNumber) {
+      if (qs) {
         setLoading(true);
         try {
-          const qs = useId
-            ? `id=${encodeURIComponent(String(orderId))}`
-            : `order_number=${encodeURIComponent(String(orderNumber))}`;
-
-          const res = await fetch(`${API_BASE}/order?${qs}`, { headers: { Accept: "application/json" } });
+          const res = await fetch(`${API_BASE}/order?${qs}`, {
+            headers: { Accept: "application/json", "Cache-Control": "no-store" },
+          });
           const json = await res.json().catch(() => null);
 
           if (!res.ok || !json?.ok || !json?.order) {
@@ -646,6 +645,7 @@ export default function ConfirmationScreen() {
 
           const theOrder: Order = json.order;
 
+          // Normalize items → order_items if needed
           if (!theOrder.order_items && Array.isArray(theOrder.items)) {
             theOrder.order_items = theOrder.items.map((it: any) => ({
               id: it.id ?? undefined,
@@ -675,16 +675,28 @@ export default function ConfirmationScreen() {
         }
       }
 
+      // Fallback to session cache
       const cached = readLastOrderFromSession();
       if (cached && !cancelled) {
         setOrder(cached);
         setLoading(false);
+      } else if (!cancelled) {
+        setLoading(false);
+        if (!orderNumber && !idIfUuid) {
+          setError("Missing order reference in URL.");
+          // Optional: console hint for old links
+          if (typeof window !== "undefined" && idParam && !isUUID(idParam)) {
+            console.warn("Deprecated: 'orderId' contains non-UUID. Treating as order_number would fix the link.");
+          }
+        }
       }
     };
 
     load();
-    return () => { cancelled = true; };
-  }, [orderId, orderNumber]);
+    return () => {
+      cancelled = true;
+    };
+  }, [idIfUuid, orderNumber]);
 
   const handleViewOrders = () => router.push("/account/orders");
   const handleContinue = () => router.push("/");
@@ -697,7 +709,9 @@ export default function ConfirmationScreen() {
         {!order ? (
           <>
             {loading ? (
-              <View style={{ marginTop: 24 }}><ActivityIndicator /></View>
+              <View style={{ marginTop: 24 }}>
+                <ActivityIndicator />
+              </View>
             ) : (
               <>
                 {pending && !error ? (
