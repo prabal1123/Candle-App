@@ -86,7 +86,6 @@
 // };
 
 
-
 // api/order.js
 module.exports.config = { runtime: "nodejs" };
 
@@ -108,14 +107,15 @@ module.exports = async (req, res) => {
 
   let { id, order_number } = req.query || {};
 
-  // SAFETY NET: if id is present but not UUID, treat it as order_number
+  // ✅ If id exists but is not UUID, treat it as order_number
   if (!order_number && id && !isUUID(id)) {
     order_number = id;
     id = undefined;
   }
 
-  if (!order_number && !id) {
-    return res.status(400).json({ ok: false, error: "Provide ?order_number=... or ?id=<uuid>" });
+  // ✅ Require at least one of order_number or valid UUID id
+  if (!order_number && (!id || !isUUID(id))) {
+    return res.status(400).json({ ok: false, error: "Provide ?order_number=... or a valid ?id=<uuid>" });
   }
 
   try {
@@ -128,11 +128,9 @@ module.exports = async (req, res) => {
     let q = supabase.from("orders").select("*").limit(1);
 
     if (order_number) {
-      q = q.eq("order_number", order_number);
+      q = q.eq("order_number", String(order_number));
     } else if (id && isUUID(id)) {
-      q = q.eq("id", id);
-    } else {
-      return res.status(400).json({ ok: false, error: "id must be a UUID" });
+      q = q.eq("id", String(id));
     }
 
     const { data, error } = await q.single();

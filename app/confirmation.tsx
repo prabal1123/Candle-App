@@ -527,6 +527,7 @@
 //     </ScrollView>
 //   );
 // }
+
 // app/confirmation.tsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { View, Text, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
