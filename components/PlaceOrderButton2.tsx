@@ -127,14 +127,13 @@
 
 
 
-
 // components/PlaceOrderButton2.tsx
 import React from "react";
 import { TouchableOpacity, Text, Alert, Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
 
 type Props = {
-  localOrder: any;                // { items, totals, customer, shipping_address, ... }
+  localOrder: any;                // { items, totals, customer, shipping_address, notes?, ... }
   backendUrl?: string;            // e.g. https://thehappycandles.com/api
   onPaid?: (payload: any) => void;
   onError?: (err: any) => void;
@@ -142,14 +141,20 @@ type Props = {
 };
 
 const apiBase = (b?: string) =>
-  (b?.replace(/\/$/, "") || process.env.EXPO_PUBLIC_API_BASE?.replace(/\/$/, "") || "https://candle-app-lac.vercel.app/api");
+  (b?.replace(/\/$/, "") ||
+    process.env.EXPO_PUBLIC_API_BASE?.replace(/\/$/, "") ||
+    "https://candle-app-lac.vercel.app/api");
 
 const paise = (order: any) => {
   const v =
     order?.total_paise ??
     order?.subtotal_paise ??
     (Array.isArray(order?.items)
-      ? order.items.reduce((s: number, it: any) => s + Math.round((it.price_cents ?? it.price * 100) * (it.qty ?? it.quantity ?? 1)), 0)
+      ? order.items.reduce(
+          (s: number, it: any) =>
+            s + Math.round((it.price_cents ?? it.price * 100) * (it.qty ?? it.quantity ?? 1)),
+          0
+        )
       : null) ??
     (order?.total != null ? Math.round(Number(order.total) * 100) : null);
   return Number.isFinite(v) ? Number(v) : null;
@@ -162,9 +167,30 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
       if (!amount || amount < 100) throw new Error(`Invalid amount (paise): ${amount}`);
 
       const base = apiBase(backendUrl);
-      const receipt = localOrder?.clientReference ?? localOrder?.id ?? `CANDLE-${Date.now()}`;
+      const clientReceipt = localOrder?.clientReference ?? localOrder?.id ?? `CANDLE-${Date.now()}`;
 
+      // 🔐 session + user id
       const { data: { session } = { data: undefined } } = await supabase.auth.getSession();
+      const user_id = session?.user?.id ?? null;
+
+      // 📝 unify notes we’ll send end-to-end
+      const items = localOrder?.items ?? null;
+      const customer_name = localOrder?.customer?.name ?? null;
+      const phone = localOrder?.customer?.phone ?? null;
+      const email = localOrder?.customer?.email ?? null;
+      const shipping_address =
+        localOrder?.shipping_address ?? localOrder?.customer?.address ?? null;
+
+      const notesCombined = {
+        user_id,
+        customer_name,
+        phone,
+        email,
+        shipping_address,
+        items,
+        ...(localOrder?.notes || {}),
+      };
+
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
 
@@ -173,17 +199,23 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
         method: "POST",
         headers,
         body: JSON.stringify({
-          amount, currency: "INR", receipt,
-          notes: localOrder?.notes ?? {},
+          amount,
+          currency: "INR",
+          receipt: clientReceipt,
+          // ✅ ensure backend + RZP get the full context
+          notes: notesCombined,
           raw_payload: {
-            items: localOrder?.items ?? null,
+            items,
             customer: localOrder?.customer ?? null,
-            shipping_address: localOrder?.shipping_address ?? localOrder?.customer?.address ?? null,
+            shipping_address,
           },
         }),
       });
+
       const createJson = await createRes.json().catch(() => ({}));
-      if (!createRes.ok || !createJson?.id || !createJson?.order_number) {
+
+      // ✅ Razorpay returns { id, amount, currency, receipt, notes, ... }
+      if (!createRes.ok || !createJson?.id || !createJson?.receipt) {
         throw new Error(createJson?.error || "create-order failed");
       }
 
@@ -196,11 +228,13 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
         await new Promise<void>((resolve, reject) => {
           const rzp = new Razorpay({
             key: createJson.key_id,
-            amount: createJson.amount,
-            currency: createJson.currency,
-            name: (localOrder?.customer?.name || "Candle App"),
+            amount: createJson.amount,     // in paise
+            currency: createJson.currency, // "INR"
+            name: localOrder?.customer?.name || "Candle App",
             description: "Order Payment",
-            order_id: createJson.id, // razorpay_order_id
+            order_id: createJson.id,       // razorpay_order_id
+            // ✅ keep the same notes we used to create the order
+            notes: notesCombined,
             handler: async (resp: any) => {
               try {
                 const verifyRes = await fetch(`${base}/verify-payment`, {
@@ -210,18 +244,23 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
                     razorpay_order_id: resp.razorpay_order_id,
                     razorpay_payment_id: resp.razorpay_payment_id,
                     razorpay_signature: resp.razorpay_signature,
-                    local_receipt: receipt, // 👈 keep same order_number end-to-end
-                    items: localOrder?.items ?? null,
-                    customer_name: localOrder?.customer?.name ?? null,
-                    phone: localOrder?.customer?.phone ?? null,
-                    shipping_address: localOrder?.shipping_address ?? localOrder?.customer?.address ?? null,
-                    notes: localOrder?.notes ?? null,
+                    local_receipt: clientReceipt, // keep same receipt/order_number
+                    // pass context so /verify-payment can upsert all columns
+                    user_id,
+                    customer_name,
+                    phone,
+                    email,
+                    shipping_address,
+                    items,
+                    notes: notesCombined,
                   }),
                 });
                 const verifyJson = await verifyRes.json().catch(() => ({}));
                 if (!verifyRes.ok || !verifyJson?.ok) return reject(verifyJson);
+
                 try { sessionStorage.setItem("order_number", verifyJson.order_number); } catch {}
                 onPaid?.(verifyJson);
+
                 if (typeof window !== "undefined") {
                   window.location.assign(`/confirmation?order_number=${encodeURIComponent(verifyJson.order_number)}`);
                 }
@@ -230,11 +269,10 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
             },
             modal: { ondismiss: () => reject(new Error("Checkout dismissed")) },
             prefill: {
-              name: localOrder?.customer?.name || "",
-              contact: localOrder?.customer?.phone || "",
-              email: localOrder?.customer?.email || "",
+              name: customer_name || "",
+              contact: phone || "",
+              email: email || "",
             },
-            notes: localOrder?.notes || {},
           });
           rzp.open();
         });
@@ -242,7 +280,7 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
         return;
       }
 
-      // 3) Native path: integrate RN Razorpay SDK, then call /verify-payment with its response
+      // 3) Native: integrate RN Razorpay SDK, then call /verify-payment with its response payload.
       throw new Error("Wire native Razorpay SDK then call /verify-payment with its response.");
     } catch (e: any) {
       onError?.(e);
@@ -252,11 +290,14 @@ export default function PlaceOrderButton2({ localOrder, backendUrl, onPaid, onEr
 
   const label = (() => {
     const a = paise(localOrder) ?? 0;
-    return (a / 100).toFixed(2);
+    return (a / 100).toFixed(2); // rupees
   })();
 
   return (
-    <TouchableOpacity onPress={handlePress} style={[{ backgroundColor: "#111", padding: 12, borderRadius: 8, alignItems: "center" }, style]}>
+    <TouchableOpacity
+      onPress={handlePress}
+      style={[{ backgroundColor: "#111", padding: 12, borderRadius: 8, alignItems: "center" }, style]}
+    >
       <Text style={{ color: "#fff", fontWeight: "700" }}>Pay ₹{label}</Text>
     </TouchableOpacity>
   );

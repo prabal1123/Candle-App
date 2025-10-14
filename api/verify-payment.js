@@ -109,7 +109,6 @@
 //     return res.status(500).json({ ok: false, error: err.message || String(err) });
 //   }
 // };
-
 // /api/verify-payment.js
 module.exports.config = { runtime: "nodejs" };
 
@@ -131,18 +130,20 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
       local_receipt,
-      user_id,
-      items,
-      shipping_address,
-      customer_name,
-      phone,
-      notes
+      // optional client-provided context (we'll merge with RZP notes)
+      user_id: user_id_client,
+      items: items_client,
+      shipping_address: shipping_address_client,
+      customer_name: customer_name_client,
+      phone: phone_client,
+      notes: notes_client,
+      email: email_client,
     } = body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -155,7 +156,7 @@ module.exports = async (req, res) => {
       return res.status(500).json({ ok: false, error: "Razorpay keys not configured" });
     }
 
-    // 1️⃣ Verify signature
+    // 1) Verify signature
     const expected = crypto
       .createHmac("sha256", key_secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -166,17 +167,17 @@ module.exports = async (req, res) => {
       return res.status(400).json({ ok: false, error: "Invalid signature" });
     }
 
-    // 2️⃣ Fetch Razorpay order to confirm amount + currency + receipt
+    // 2) Fetch Razorpay order (source of truth for amount/currency/receipt/notes)
     const rzp = new Razorpay({ key_id, key_secret });
     const rzpOrder = await rzp.orders.fetch(razorpay_order_id).catch((e) => {
       console.error("Failed to fetch Razorpay order:", e);
       throw new Error("Unable to fetch Razorpay order");
     });
 
-    const total_cents = Number(rzpOrder?.amount);
+    const total_cents = Number(rzpOrder?.amount); // paise
     const currency = rzpOrder?.currency || "INR";
-    const order_number =
-      local_receipt || rzpOrder?.receipt || `CANDLE-${Date.now()}`;
+    const receiptFromRzp = rzpOrder?.receipt || null;
+    const order_number = local_receipt || receiptFromRzp || `CANDLE-${Date.now()}`;
 
     if (!Number.isFinite(total_cents) || total_cents <= 0) {
       return res.status(400).json({ ok: false, error: "Invalid order amount" });
@@ -184,41 +185,57 @@ module.exports = async (req, res) => {
 
     const amount = Math.round(total_cents / 100);
 
-    // 3️⃣ Prepare data for DB insert
-    const orderPayload = {
-      user_id: user_id || null,
-      order_number,
-      status: "paid",
-      total_cents,
-      amount,
-      currency,
-      shipping_address: shipping_address || null,
-      estimated_delivery: null,
-      items: items ?? null,
-      customer_name: customer_name || null,
-      phone: phone || null,
-      razorpay_order_id,
-      razorpay_payment_id,
-      notes:
-        typeof notes === "object" && notes !== null
-          ? notes
-          : notes
-          ? { notes }
-          : {},
-      payment_status: "paid",
+    // 3) Merge context (RZP notes take precedence, then client payload)
+    const notes_rzp = (rzpOrder?.notes && typeof rzpOrder.notes === "object") ? rzpOrder.notes : {};
+    const merged = {
+      ...notes_client,
+      ...notes_rzp, // prefer server-side notes
     };
 
-    // clean undefined keys
-    Object.keys(orderPayload).forEach((k) => {
-      if (orderPayload[k] === undefined) delete orderPayload[k];
-    });
+    const user_id = merged.user_id ?? user_id_client ?? null;
+    const customer_name = merged.customer_name ?? customer_name_client ?? null;
+    const phone = merged.phone ?? phone_client ?? null;
+    const email = merged.email ?? email_client ?? null;
+    const items = merged.items ?? items_client ?? null;
 
-    // 4️⃣ Insert into Supabase (idempotent upsert)
+    // shipping_address column is TEXT → stringify objects safely
+    const shipping_address_raw = merged.shipping_address ?? shipping_address_client ?? null;
+    const shipping_address =
+      shipping_address_raw && typeof shipping_address_raw === "object"
+        ? JSON.stringify(shipping_address_raw)
+        : (shipping_address_raw ?? null);
+
+    // 4) Upsert into Supabase
     const supabase = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { persistSession: false } }
     );
+
+    const orderPayload = {
+      user_id,
+      order_number,
+      status: "paid",
+      total_cents,                 // 🔒 NOT NULL
+      amount,                      // rupees (informational)
+      currency,
+      shipping_address,            // text
+      estimated_delivery: null,
+      items: items ?? null,        // jsonb
+      customer_name,
+      phone,
+      razorpay_order_id,
+      razorpay_payment_id,
+      notes: (typeof merged === "object" && merged) ? merged : {},
+      updated_at: new Date().toISOString(),
+      // ❌ payment_status removed (column doesn't exist)
+      // created_at: leave to DEFAULT if row didn't exist
+    };
+
+    // Clean undefined just in case
+    Object.keys(orderPayload).forEach((k) => {
+      if (orderPayload[k] === undefined) delete orderPayload[k];
+    });
 
     let { data, error } = await supabase
       .from("orders")
@@ -226,9 +243,9 @@ module.exports = async (req, res) => {
       .select("id, order_number")
       .single();
 
-    // Handle duplicate gracefully
     if (error) {
       const msg = error.message || String(error);
+      // Graceful duplicate handling
       if (/duplicate key|unique constraint/i.test(msg) && order_number) {
         const existing = await supabase
           .from("orders")
@@ -236,6 +253,7 @@ module.exports = async (req, res) => {
           .eq("order_number", order_number)
           .maybeSingle();
         if (existing.data?.id) {
+          console.log("ℹ️ Duplicate upsert; returning existing:", existing.data.order_number);
           return res.status(200).json({
             ok: true,
             orderId: existing.data.id,
@@ -244,19 +262,17 @@ module.exports = async (req, res) => {
           });
         }
       }
+      console.error("❌ Supabase upsert error:", error);
       throw error;
     }
 
     if (!data?.id) {
+      console.error("❓ Insert succeeded but id missing for", order_number);
       return res.status(500).json({ ok: false, error: "Insert succeeded but id missing" });
     }
 
-    console.log("✅ Order verified & inserted:", order_number);
-    return res.status(200).json({
-      ok: true,
-      orderId: data.id,
-      order_number: data.order_number,
-    });
+    console.log("✅ Order verified & upserted:", order_number);
+    return res.status(200).json({ ok: true, orderId: data.id, order_number: data.order_number });
   } catch (err) {
     console.error("verify-payment error:", err);
     return res.status(500).json({ ok: false, error: err.message || String(err) });

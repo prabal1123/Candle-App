@@ -95,6 +95,7 @@
 //     });
 //   }
 // };
+// /api/create-order.js
 const Razorpay = require("razorpay");
 const { createClient } = require("@supabase/supabase-js");
 const util = require("util");
@@ -105,6 +106,22 @@ function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+}
+
+// ✅ Ensure Razorpay notes obey key/value limits & string-only values
+function normalizeRzpNotes(notes) {
+  const out = {};
+  const src = notes && typeof notes === "object" ? notes : {};
+  // RZP: <=15 pairs, keys <=256 chars, values <=2048 chars, values must be strings
+  for (const [k, v] of Object.entries(src)) {
+    if (Object.keys(out).length >= 15) break;
+    const key = String(k).slice(0, 256);
+    let val = v;
+    if (typeof v === "object") val = JSON.stringify(v);
+    if (typeof val !== "string") val = String(val);
+    out[key] = val.slice(0, 2048);
+  }
+  return out;
 }
 
 module.exports = async (req, res) => {
@@ -131,21 +148,41 @@ module.exports = async (req, res) => {
     if (!Number.isFinite(amount) || amount < 100) {
       return res.status(400).json({ ok: false, error: "Invalid amount (must be ≥ 100 paise)" });
     }
-
     if (!receipt || typeof receipt !== "string") {
       return res.status(400).json({ ok: false, error: "Missing or invalid receipt" });
     }
 
-    // 1️⃣ Create Razorpay order
+    // notes: { user_id, customer_name, phone, shipping_address, items, ... }
+    const {
+      user_id = null,
+      customer_name = null,
+      phone = null,
+      shipping_address: shipping_address_raw = null,
+      items = null,
+      email = null,
+    } = notes || {};
+
+    // 🔒 RZP notes must be strings; also safe-limit sizes
+    const notesForRzp = normalizeRzpNotes({
+      user_id,
+      customer_name,
+      phone,
+      email,
+      shipping_address: shipping_address_raw, // will be stringified inside
+      items,                                   // will be stringified inside
+      ...notes,
+    });
+
+    // 1) Create Razorpay order
     const razorpay = new Razorpay({ key_id, key_secret });
     const rpOrder = await razorpay.orders.create({
       amount,
       currency,
       receipt,
-      notes,
+      notes: notesForRzp,
     });
 
-    // 2️⃣ Insert a 'pending' record in Supabase
+    // 2) Insert/Upsert a 'pending' record in Supabase
     try {
       const supabase = createClient(
         process.env.SUPABASE_URL,
@@ -153,29 +190,51 @@ module.exports = async (req, res) => {
         { auth: { persistSession: false } }
       );
 
+      // DB wants TEXT for shipping_address; stringify objects
+      const shipping_address =
+        shipping_address_raw && typeof shipping_address_raw === "object"
+          ? JSON.stringify(shipping_address_raw)
+          : (shipping_address_raw ?? null);
+
       const orderPayload = {
         order_number: receipt,
         status: "pending",
-        payment_status: "pending",
         razorpay_order_id: rpOrder.id,
-        amount: Math.round(amount / 100),
-        total_cents: amount,
+        amount: Math.round(amount / 100), // rupees (informational)
+        total_cents: amount,              // paise (NOT NULL)
         currency,
-        notes: notes || {},
+        // Keep original rich data in DB (json/text) — RZP got stringified copies above
+        notes: (notes && typeof notes === "object") ? notes : {},
+        user_id,
+        customer_name,
+        phone,
+        email,
+        shipping_address,  // TEXT
+        items,             // JSONB
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
-      await supabase.from("orders").upsert(orderPayload, { onConflict: "order_number" });
-      console.log("🟢 Pending order inserted:", receipt);
+      const { data, error } = await supabase
+        .from("orders")
+        .upsert(orderPayload, { onConflict: "order_number" })
+        .select("id, order_number, status, total_cents, currency, user_id")
+        .single();
+
+      if (error) {
+        console.error("⚠️ Pending order upsert error:", error);
+      } else {
+        console.log("🟢 Pending order upserted:", data);
+      }
     } catch (dbErr) {
-      console.warn("⚠️ Failed to insert pending order:", dbErr.message);
+      console.warn("⚠️ Failed to insert pending order:", dbErr?.message || dbErr);
     }
 
-    // 3️⃣ Return the Razorpay order to client
+    // 3) Return the Razorpay order to client
     return res.status(200).json({
       ok: true,
-      ...rpOrder,
-      key_id,
+      ...rpOrder, // includes id, amount, currency, receipt, notes
+      key_id,     // client uses this for Checkout
     });
   } catch (err) {
     console.error("create-order error:", err);

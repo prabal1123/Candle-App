@@ -437,8 +437,7 @@
 //   }
 // };
 
-
-// ✅ /api/razorpay-callback.js
+// /api/razorpay-callback.js
 module.exports.config = { runtime: "nodejs" };
 
 const crypto = require("crypto");
@@ -477,7 +476,9 @@ module.exports = async (req, res) => {
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
     if (!key_id || !key_secret) return res.status(500).send("Razorpay keys missing");
 
-    // --- ✅ NEW: Verify signature + insert into Supabase ---
+    let receipt = null;
+    let rzpOrder = null;
+
     if (orderId && paymentId && signature) {
       try {
         const expected = crypto
@@ -485,31 +486,59 @@ module.exports = async (req, res) => {
           .update(`${orderId}|${paymentId}`)
           .digest("hex");
 
-        if (expected === signature) {
-          // Fetch order from Razorpay to get receipt (your local order_number)
+        if (expected !== signature) {
+          console.warn("❌ Signature mismatch in callback");
+        } else {
           const rzp = new Razorpay({ key_id, key_secret });
-          const rzpOrder = await rzp.orders.fetch(orderId);
-          const order_number = rzpOrder?.receipt || `CANDLE-${Date.now()}`;
+          rzpOrder = await rzp.orders.fetch(orderId);
+          receipt = rzpOrder?.receipt || `CANDLE-${Date.now()}`;
 
-          // Insert into Supabase (status = paid)
+          // Pull context back out of notes (sent at create time)
+          const notes = rzpOrder?.notes || {};
+          const user_id          = notes.user_id ?? null;
+          const customer_name    = notes.customer_name ?? null;
+          const phone            = notes.phone ?? null;
+          const shipping_address = notes.shipping_address ?? null;
+          const items            = notes.items ?? null;
+
+          const amountPaise  = Number(rzpOrder?.amount) || 0; // in paise
+          const amountRupees = Math.round(amountPaise / 100);
+
           const supabase = createClient(
             process.env.SUPABASE_URL,
             process.env.SUPABASE_SERVICE_ROLE_KEY,
             { auth: { persistSession: false } }
           );
 
-          await supabase.from("orders").upsert({
-            order_number,
+          const payload = {
+            order_number: receipt,
             razorpay_order_id: orderId,
-            payment_id: paymentId,
-            payment_status: "paid",
+            razorpay_payment_id: paymentId, // ✅ correct column name
             status: "paid",
-            amount: rzpOrder?.amount / 100,
-            currency: rzpOrder?.currency || "INR"
-          });
-          console.log("✅ Order verified + inserted:", order_number);
-        } else {
-          console.warn("❌ Signature mismatch in callback");
+            // payment_status: "paid",      // ❌ remove (column doesn't exist)
+            amount: amountRupees,
+            total_cents: amountPaise,       // ✅ NOT NULL column
+            currency: rzpOrder?.currency || "INR",
+            user_id,
+            customer_name,
+            phone,
+            shipping_address,
+            items,
+            notes,                          // keep the raw notes for audit
+            updated_at: new Date().toISOString(),
+          };
+
+          const { data, error } = await supabase
+            .from("orders")
+            .upsert(payload, { onConflict: "order_number" })
+            .select("*")
+            .single();
+
+          if (error) {
+            console.error("❌ Paid order upsert error:", error);
+          } else {
+            console.log("✅ Order verified + upserted:", data?.order_number);
+          }
         }
       } catch (verifyErr) {
         console.error("Callback verify/insert error:", verifyErr);
@@ -517,16 +546,16 @@ module.exports = async (req, res) => {
     } else {
       console.warn("⚠️ Missing Razorpay fields in callback", { orderId, paymentId, hasSig: !!signature });
     }
-    // --- END of new section ---
 
-    // Fetch order to read its receipt (your order_number)
-    let receipt = null;
-    try {
-      const rzp = new Razorpay({ key_id, key_secret });
-      const rzpOrder = await rzp.orders.fetch(orderId);
-      receipt = rzpOrder?.receipt || null;
-    } catch (e) {
-      console.error("Razorpay fetch in callback failed:", e?.error || e);
+    // Fallback: attempt to fetch receipt if we still don't have it
+    if (!receipt && orderId) {
+      try {
+        const rzp = new Razorpay({ key_id, key_secret });
+        const fetched = await rzp.orders.fetch(orderId);
+        receipt = fetched?.receipt || null;
+      } catch (e) {
+        console.error("Razorpay fetch in callback failed:", e?.error || e);
+      }
     }
 
     const site = (process.env.PUBLIC_BASE_URL || getOrigin(req)).replace(/\/$/, "");
