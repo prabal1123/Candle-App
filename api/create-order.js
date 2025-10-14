@@ -95,19 +95,16 @@
 //     });
 //   }
 // };
-
-
-
-// api/create-order.js
 const Razorpay = require("razorpay");
+const { createClient } = require("@supabase/supabase-js");
 const util = require("util");
 
-module.exports.config = { runtime: "nodejs" }; // Razorpay needs Node (not Edge)
+module.exports.config = { runtime: "nodejs" };
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 module.exports = async (req, res) => {
@@ -118,68 +115,75 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Normalize body (string/buffer/object)
-    const body =
-      typeof req.body === "string"
-        ? JSON.parse(req.body || "{}")
-        : Buffer.isBuffer(req.body)
-        ? JSON.parse(req.body.toString("utf8") || "{}")
-        : (req.body || {});
-
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     let { amount, currency = "INR", receipt, notes = {}, raw_payload = {} } = body;
 
-    // Env guards
     const key_id = process.env.RAZORPAY_KEY_ID;
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
     if (!key_id || !key_secret) {
       return res.status(500).json({
         ok: false,
-        error: "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET missing on server",
+        error: "Razorpay keys not configured (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)",
       });
     }
 
-    // Validate amount (integer paise >= 100)
     amount = Number(amount);
-    if (!Number.isFinite(amount)) {
-      return res.status(400).json({ ok: false, error: "amount must be a number in paise (₹499 → 49900)" });
-    }
-    amount = Math.round(amount);
-    if (amount < 100) {
-      return res.status(400).json({ ok: false, error: "amount must be ≥ 100 paise (₹1)" });
+    if (!Number.isFinite(amount) || amount < 100) {
+      return res.status(400).json({ ok: false, error: "Invalid amount (must be ≥ 100 paise)" });
     }
 
-    // Validate receipt (your human-readable order number)
     if (!receipt || typeof receipt !== "string") {
-      return res.status(400).json({ ok: false, error: "Missing/invalid receipt" });
+      return res.status(400).json({ ok: false, error: "Missing or invalid receipt" });
     }
 
-    // Create Razorpay order
+    // 1️⃣ Create Razorpay order
     const razorpay = new Razorpay({ key_id, key_secret });
     const rpOrder = await razorpay.orders.create({
-      amount,            // integer paise
-      currency,          // INR
-      receipt,           // your reference (we surface this as order_number)
-      notes,             // optional metadata
+      amount,
+      currency,
+      receipt,
+      notes,
     });
 
-    // Success — return what the client expects
-    // rpOrder includes: { id, amount, currency, status, receipt, entity, created_at, ... }
-    return res.status(201).json({
+    // 2️⃣ Insert a 'pending' record in Supabase
+    try {
+      const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { persistSession: false } }
+      );
+
+      const orderPayload = {
+        order_number: receipt,
+        status: "pending",
+        payment_status: "pending",
+        razorpay_order_id: rpOrder.id,
+        amount: Math.round(amount / 100),
+        total_cents: amount,
+        currency,
+        notes: notes || {},
+        created_at: new Date().toISOString(),
+      };
+
+      await supabase.from("orders").upsert(orderPayload, { onConflict: "order_number" });
+      console.log("🟢 Pending order inserted:", receipt);
+    } catch (dbErr) {
+      console.warn("⚠️ Failed to insert pending order:", dbErr.message);
+    }
+
+    // 3️⃣ Return the Razorpay order to client
+    return res.status(200).json({
       ok: true,
       ...rpOrder,
-      order_number: rpOrder.receipt, // 👈 critical: frontend expects this key
-      key_id,                        // for Razorpay Checkout
-      debug: { got_raw_payload: !!raw_payload },
-      version: "create-order@2025-10-14-01" 
+      key_id,
     });
   } catch (err) {
-    // Verbose error output for quick debugging
-    console.error("create-order error (full):", err);
+    console.error("create-order error:", err);
     let errorOut;
     try {
       errorOut = JSON.stringify(err, Object.getOwnPropertyNames(err), 2);
     } catch {
-      try { errorOut = util.inspect(err, { depth: 6 }); } catch { errorOut = String(err); }
+      errorOut = util.inspect(err, { depth: 6 });
     }
     return res.status(500).json({ ok: false, error: errorOut });
   }
