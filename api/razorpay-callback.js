@@ -438,12 +438,12 @@
 // };
 
 
-
-// api/razorpay-callback.js
+// ✅ /api/razorpay-callback.js
 module.exports.config = { runtime: "nodejs" };
 
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
+const { createClient } = require("@supabase/supabase-js");
 
 function parseFormOrJson(req) {
   const ct = req.headers["content-type"] || "";
@@ -477,10 +477,47 @@ module.exports = async (req, res) => {
     const key_secret = process.env.RAZORPAY_KEY_SECRET;
     if (!key_id || !key_secret) return res.status(500).send("Razorpay keys missing");
 
-    // (Optional) verify quickly only for routing; DB write happens in /verify-payment
-    if (!orderId || !paymentId || !signature) {
-      console.error("Callback missing fields:", { orderId, paymentId, hasSig: !!signature });
+    // --- ✅ NEW: Verify signature + insert into Supabase ---
+    if (orderId && paymentId && signature) {
+      try {
+        const expected = crypto
+          .createHmac("sha256", key_secret)
+          .update(`${orderId}|${paymentId}`)
+          .digest("hex");
+
+        if (expected === signature) {
+          // Fetch order from Razorpay to get receipt (your local order_number)
+          const rzp = new Razorpay({ key_id, key_secret });
+          const rzpOrder = await rzp.orders.fetch(orderId);
+          const order_number = rzpOrder?.receipt || `CANDLE-${Date.now()}`;
+
+          // Insert into Supabase (status = paid)
+          const supabase = createClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            { auth: { persistSession: false } }
+          );
+
+          await supabase.from("orders").upsert({
+            order_number,
+            razorpay_order_id: orderId,
+            payment_id: paymentId,
+            payment_status: "paid",
+            status: "paid",
+            amount: rzpOrder?.amount / 100,
+            currency: rzpOrder?.currency || "INR"
+          });
+          console.log("✅ Order verified + inserted:", order_number);
+        } else {
+          console.warn("❌ Signature mismatch in callback");
+        }
+      } catch (verifyErr) {
+        console.error("Callback verify/insert error:", verifyErr);
+      }
+    } else {
+      console.warn("⚠️ Missing Razorpay fields in callback", { orderId, paymentId, hasSig: !!signature });
     }
+    // --- END of new section ---
 
     // Fetch order to read its receipt (your order_number)
     let receipt = null;

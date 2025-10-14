@@ -170,6 +170,7 @@ module.exports = async (req, res) => {
       order_number: rpOrder.receipt, // 👈 critical: frontend expects this key
       key_id,                        // for Razorpay Checkout
       debug: { got_raw_payload: !!raw_payload },
+      version: "create-order@2025-10-14-01" 
     });
   } catch (err) {
     // Verbose error output for quick debugging
