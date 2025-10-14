@@ -69,7 +69,6 @@
 // app/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type AuthContextType = {
   user: any;
@@ -80,73 +79,41 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Use React.FC for cleaner TypeScript typing
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restore session from AsyncStorage
-    const restoreSession = async () => {
-      try {
-        const sessionData = await AsyncStorage.getItem("supabase.auth.session");
-        if (sessionData) {
-          const session = JSON.parse(sessionData);
-          const { data, error } = await supabase.auth.setSession({
-            access_token: session.access_token,
-            refresh_token: session.refresh_token,
-          });
-          if (error) throw error;
-          setUser(data.session?.user ?? null);
-        }
-      } catch (e) {
-        console.error("Session restore error:", e);
-      }
-    };
+    let mounted = true;
 
-    // Initial session check
-    const initSession = async () => {
-      await restoreSession();
+    (async () => {
+      // Initial session check
       const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
       setUser(data.session?.user ?? null);
       setLoading(false);
-    };
-    initSession();
+    })();
 
     // Subscribe to auth changes
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      try {
-        if (session) {
-          await AsyncStorage.setItem("supabase.auth.session", JSON.stringify(session));
-        } else {
-          await AsyncStorage.removeItem("supabase.auth.session");
-        }
-      } catch (e) {
-        console.error("AsyncStorage error:", e);
-      }
     });
 
     return () => {
-      try {
-        listener.subscription.unsubscribe();
-      } catch {}
+      try { sub.subscription.unsubscribe(); } catch {}
+      mounted = false;
     };
   }, []);
 
   const signInWithOtp = async (email: string, redirectTo?: string) => {
-    const payload: any = { email };
-    if (redirectTo) {
-      payload.options = { emailRedirectTo: redirectTo };
-    }
-    const result = await supabase.auth.signInWithOtp(payload);
-    return result;
+    const payload: any = { email, options: {} };
+    if (redirectTo) payload.options.emailRedirectTo = redirectTo;
+    return supabase.auth.signInWithOtp(payload);
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    await AsyncStorage.removeItem("supabase.auth.session");
   };
 
   return (

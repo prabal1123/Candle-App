@@ -529,18 +529,16 @@
 // }
 
 // app/confirmation.tsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { View, Text, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useAuth } from "../features/auth/AuthProvider";
 import { confirmationStyles as styles } from "@/styles/confirmationStyles";
 
 function getApiBase() {
   const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;                         // e.g. https://site.com/api
-  if (typeof window !== "undefined") return `${window.location.origin}/api`; // same-origin
-  return "https://candle-app-lac.vercel.app/api";      // fallback
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") return `${window.location.origin}/api`;
+  return "https://candle-app-lac.vercel.app/api";
 }
 const API_BASE = getApiBase();
 
@@ -581,20 +579,21 @@ function centsToCurrency(cents?: number, currency = "INR") {
 
 export default function ConfirmationScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ order_number?: string; orderNumber?: string; id?: string; orderId?: string; order_id?: string; pending?: string }>();
-  const { user, loading: authLoading } = useAuth();
+  const params = useLocalSearchParams<{ order_number?: string; orderNumber?: string; id?: string; orderId?: string; order_id?: string }>();
 
   const [loading, setLoading] = useState<boolean>(false);
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Read query params (works on native too). Also support legacy names.
+  const [tries, setTries] = useState(0);
+  const retryTimer = useRef<any>(null);
+
+  // read from URL
   const fromRouterOrderNum = (params.order_number || params.orderNumber) as string | undefined;
   const fromRouterId = (params.id || params.orderId || params.order_id) as string | undefined;
-  const pending = params.pending === "true";
 
-  // Web fallback (just in case the page was linked directly and router didn’t catch)
+  // web fallback
   const { fallbackOrderNum, fallbackId } = useMemo(() => {
     if (typeof window === "undefined") return { fallbackOrderNum: undefined, fallbackId: undefined };
     const sp = new URLSearchParams(window.location.search);
@@ -605,7 +604,12 @@ export default function ConfirmationScreen() {
   }, []);
 
   const orderNumber = useMemo(() => {
-    return fromRouterOrderNum || fallbackOrderNum || (fromRouterId && !isUUID(fromRouterId) ? fromRouterId : undefined) || (fallbackId && !isUUID(fallbackId) ? fallbackId : undefined);
+    return (
+      fromRouterOrderNum ||
+      fallbackOrderNum ||
+      (fromRouterId && !isUUID(fromRouterId) ? fromRouterId : undefined) ||
+      (fallbackId && !isUUID(fallbackId) ? fallbackId : undefined)
+    );
   }, [fromRouterOrderNum, fromRouterId, fallbackOrderNum, fallbackId]);
 
   const idIfUuid = useMemo(() => {
@@ -619,32 +623,12 @@ export default function ConfirmationScreen() {
     return null;
   }, [orderNumber, idIfUuid]);
 
-  // Cache helpers
-  const readLastOrderFromStorage = useCallback(async (): Promise<Order | null> => {
-    try {
-      const raw = await AsyncStorage.getItem("lastOrder");
-      return raw ? (JSON.parse(raw) as Order) : null;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const writeLastOrderToStorage = useCallback(async (o: Order) => {
-    try {
-      await AsyncStorage.setItem("lastOrder", JSON.stringify(o));
-    } catch {}
-  }, []);
-
   const fetchOrder = useCallback(async () => {
     setError(null);
     if (!endpoint) {
-      // nothing to fetch; try cache
-      const cached = await readLastOrderFromStorage();
-      if (cached) setOrder(cached);
-      else setError("Missing order reference in URL.");
+      setError("Missing order reference in URL.");
       return;
     }
-
     setLoading(true);
     try {
       const res = await fetch(endpoint, { headers: { Accept: "application/json", "Cache-Control": "no-store" } });
@@ -654,14 +638,13 @@ export default function ConfirmationScreen() {
         const msg =
           json?.error ||
           (res.status === 404
-            ? "Order not found. If payment just finished, pull to refresh in a moment."
+            ? "Order not found. If payment just finished, we’ll retry once."
             : `Failed to fetch order (${res.status}).`);
         throw new Error(msg);
       }
 
       const theOrder: Order = json.order;
 
-      // Normalize items
       if (Array.isArray(theOrder.items)) {
         theOrder.items = theOrder.items.map((it: any, idx: number) => ({
           id: it.id ?? String(idx),
@@ -678,33 +661,29 @@ export default function ConfirmationScreen() {
       }
 
       setOrder(theOrder);
-      writeLastOrderToStorage(theOrder);
     } catch (e: any) {
+      setOrder(null);
       setError(e?.message || "Something went wrong while loading your order.");
     } finally {
       setLoading(false);
     }
-  }, [endpoint, readLastOrderFromStorage, writeLastOrderToStorage]);
+  }, [endpoint]);
 
+  // 🚫 No auth gate here — confirmation must work even if auth is still hydrating
   useEffect(() => {
-    let cancelled = false;
+    fetchOrder();
+    return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
+  }, [fetchOrder]);
 
-    const run = async () => {
-      // auth gate
-      if (!authLoading && !user) {
-        setError("Please log in to view your order.");
-        router.push("/auth/login");
-        return;
-      }
-
-      await fetchOrder();
-    };
-
-    if (!cancelled) run();
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, user, fetchOrder, router]);
+  // Quick auto-retry once if we didn't get the order yet (helps with slow backend write)
+  useEffect(() => {
+    if (!order && endpoint && tries === 0) {
+      retryTimer.current = setTimeout(() => {
+        setTries(1);
+        fetchOrder();
+      }, 2500);
+    }
+  }, [order, endpoint, tries, fetchOrder]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -721,9 +700,9 @@ export default function ConfirmationScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View style={styles.content}>
-        <Text style={styles.pageTitle}>Order Confirmed!</Text>
+        <Text style={styles.pageTitle}>Order {order ? "Confirmed!" : "Processing…"}</Text>
 
-        {(authLoading || loading) && (
+        {loading && (
           <View style={{ marginTop: 24 }}>
             <ActivityIndicator />
           </View>
@@ -731,11 +710,9 @@ export default function ConfirmationScreen() {
 
         {!loading && (!order || error) && (
           <>
-            {orderNumber && !error && pending ? (
-              <Text style={styles.lead}>We’re finishing up your order. This page will update shortly.</Text>
-            ) : (
-              <Text style={[styles.lead, { color: "#a00" }]}>{error || "No recent order found."}</Text>
-            )}
+            <Text style={[styles.lead, error ? { color: "#a00" } : null]}>
+              {order ? "" : (error ?? "We’re finalizing your order. This page will update shortly.")}
+            </Text>
             <View style={{ height: 12 }} />
             <Pressable style={styles.secondaryBtn} onPress={onRefresh}>
               <Text style={styles.secondaryBtnText}>Retry</Text>
@@ -751,11 +728,11 @@ export default function ConfirmationScreen() {
 
         {!loading && order && !error && (
           <>
-            <Text style={styles.lead}>Thanks — your order is confirmed. A confirmation may be emailed to you.</Text>
+            <Text style={styles.lead}>Thanks — your order is confirmed.</Text>
 
             <Text style={styles.sectionTitle}>Order Summary</Text>
             <View style={styles.summary}>
-              <View style={styles.summaryRow}>
+              <View className="summaryRow" style={styles.summaryRow}>
                 <Text style={styles.muted}>Order Number</Text>
                 <Text style={styles.value}>#{order.order_number ?? order.id ?? "N/A"}</Text>
               </View>
