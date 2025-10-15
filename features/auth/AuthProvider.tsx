@@ -219,9 +219,8 @@
 
 
 
-
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase"; // ensure lib/supabase exports: export const supabase = createClient(...)
 import { getGuestIdSync } from "@/lib/guest";
 import { migrateGuestCartToUser } from "@/lib/cart";
 
@@ -240,17 +239,15 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   const migrateIfNeeded = async (uid?: string | null) => {
     if (!uid || typeof window === "undefined") return;
-
     try {
       const guestId = getGuestIdSync();
       if (!guestId) return;
 
-      const finalCartId = await migrateGuestCartToUser(uid, guestId);
+      const finalCartId = await migrateGuestCartToUser(uid, guestId); // returns string | null
       if (finalCartId) {
-        // point UI to the correct cart and clear guest markers
-        localStorage.setItem("cart_id", finalCartId);
-        localStorage.removeItem("guest_id");
-        window.dispatchEvent(new Event("cart:migrated")); // for any listeners to refetch
+        localStorage.setItem("cart_id", finalCartId); // point UI to correct cart
+        localStorage.removeItem("guest_id");          // stop reading the deleted guest cart
+        window.dispatchEvent(new Event("cart:migrated")); // optional signal for Cart UI to refetch
       }
       console.log("[AuthProvider] Guest cart migrated");
     } catch (e) {
@@ -267,10 +264,10 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       const currentUser = data.session?.user ?? null;
       setUser(currentUser);
       setLoading(false);
-      if (currentUser?.id) migrateIfNeeded(currentUser.id); // run on initial load if already signed in
+      if (currentUser?.id) migrateIfNeeded(currentUser.id); // handle refresh with existing session
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       const newUser = session?.user ?? null;
       setUser(newUser);
       if (newUser?.id) migrateIfNeeded(newUser.id); // run on login

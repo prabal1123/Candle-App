@@ -151,12 +151,9 @@
 
 //   return () => supabase.removeChannel(channel);
 // }
-
 import { supabase } from "@/lib/supabase";
 
-// ----------------------
-// Utility helpers
-// ----------------------
+// ---------- utils ----------
 const isUUID = (s?: string | null) =>
   !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s));
 
@@ -164,9 +161,7 @@ function assertUuid(name: string, val?: string | null) {
   if (!isUUID(val)) throw new Error(`${name} must be a valid UUID (got "${val ?? ""}")`);
 }
 
-// ----------------------
-// Get or create a cart
-// ----------------------
+// ---------- get or create cart ----------
 export async function getOrCreateCart(userId?: string, guestId?: string) {
   if (!userId && !guestId) throw new Error("getOrCreateCart requires either userId or guestId");
 
@@ -192,9 +187,7 @@ export async function getOrCreateCart(userId?: string, guestId?: string) {
   return newCart;
 }
 
-// ----------------------
-// Add item to cart
-// ----------------------
+// ---------- add item ----------
 export async function addItemToCart(
   cartId: string,
   product: { id: string; name: string; price_cents: number; sku?: string },
@@ -207,7 +200,6 @@ export async function addItemToCart(
     .select("*")
     .match({ cart_id: cartId, product_id: product.id })
     .limit(1);
-
   if (e) throw e;
 
   if (existing && existing.length > 0) {
@@ -242,15 +234,12 @@ export async function addItemToCart(
       ])
       .select("*")
       .single();
-
     if (iErr) throw iErr;
     return inserted;
   }
 }
 
-// ----------------------
-// Update item quantity
-// ----------------------
+// ---------- update qty ----------
 export async function updateCartItemQuantity(itemId: string, newQuantity: number) {
   assertUuid("itemId", itemId);
 
@@ -278,14 +267,11 @@ export async function updateCartItemQuantity(itemId: string, newQuantity: number
     .eq("id", itemId)
     .select("*")
     .single();
-
   if (error) throw error;
   return data;
 }
 
-// ----------------------
-// Remove item
-// ----------------------
+// ---------- remove item ----------
 export async function removeCartItem(itemId: string) {
   assertUuid("itemId", itemId);
   const { error } = await supabase.from("cart_items").delete().eq("id", itemId);
@@ -293,25 +279,19 @@ export async function removeCartItem(itemId: string) {
   return true;
 }
 
-// ----------------------
-// Fetch full cart
-// ----------------------
+// ---------- fetch cart ----------
 export async function fetchCart(cartId: string) {
   assertUuid("cartId", cartId);
-
   const { data, error } = await supabase
     .from("carts")
     .select(`*, cart_items(*)`)
     .eq("id", cartId)
     .maybeSingle(); // avoid 406 when empty
   if (error) throw error;
-
   return data;
 }
 
-// ----------------------
-// Realtime subscribe
-// ----------------------
+// ---------- realtime ----------
 export function subscribeToCart(cartId: string, onChange: (payload: any) => void) {
   assertUuid("cartId", cartId);
   const channel = supabase
@@ -331,11 +311,11 @@ export function subscribeToCart(cartId: string, onChange: (payload: any) => void
   return () => supabase.removeChannel(channel);
 }
 
-// ----------------------
-// Migrate guest cart → user cart
-// Returns the final cart id UI should use
-// ----------------------
-export async function migrateGuestCartToUser(userId: string, guestId: string): Promise<string | null> {
+// ---------- migrate guest → user (returns final cart id) ----------
+export async function migrateGuestCartToUser(
+  userId: string,
+  guestId: string
+): Promise<string | null> {
   if (!userId || !guestId) return null;
 
   const { data: guestCart, error: gErr } = await supabase
@@ -344,7 +324,7 @@ export async function migrateGuestCartToUser(userId: string, guestId: string): P
     .eq("guest_id", guestId)
     .eq("status", "open")
     .maybeSingle();
-  if (gErr || !guestCart) return null; // nothing to migrate
+  if (gErr || !guestCart) return null;
 
   const { data: userCart, error: uErr } = await supabase
     .from("carts")
@@ -360,7 +340,6 @@ export async function migrateGuestCartToUser(userId: string, guestId: string): P
       to_cart: userCart.id,
     });
     if (mErr) throw mErr;
-
     await supabase.from("carts").delete().eq("id", guestCart.id);
     return userCart.id; // final id to use
   } else {
@@ -369,7 +348,6 @@ export async function migrateGuestCartToUser(userId: string, guestId: string): P
       .update({ user_id: userId, guest_id: null })
       .eq("id", guestCart.id);
     if (updErr) throw updErr;
-
     return guestCart.id; // same cart, now owned by user
   }
 }
