@@ -2,10 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, ActivityIndicator, Alert, Platform } from "react-native";
 import { WebView } from "react-native-webview";
 import { useDispatch } from "react-redux";
-import { useNavigation } from "@react-navigation/native";
-
-// ✅ adjust this import to your slice/action name
 import { clearCart } from "@/features/cart/cartSlice";
+import { router } from "expo-router";
 
 type CartItem = { id: string; name: string; price: number; quantity: number };
 type User = { id?: string; name?: string; email?: string; phone?: string; address?: string };
@@ -18,19 +16,19 @@ export default function CheckoutScreen({
   user: User;
 }) {
   const dispatch = useDispatch();
-  const navigation = useNavigation<any>();
   const webviewRef = useRef<WebView>(null);
 
-  const [html, setHtml] = useState<string | null>(null);
+  const [checkoutHTML, setCheckoutHTML] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const BACKEND_URL = "https://www.thehappycandles.com/"; // ← change to your API base
+  const BACKEND_URL = "https://your-vercel-app.vercel.app"; // 🔁 change to your backend
 
   const amountPaise = useMemo(
-    () => cartItems.reduce((sum, it) => sum + it.price * it.quantity, 0) * 100,
+    () => cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100,
     [cartItems]
   );
 
+  // 🧩 Step 1: Create Razorpay order on backend
   useEffect(() => {
     (async () => {
       try {
@@ -44,6 +42,7 @@ export default function CheckoutScreen({
             notes: { user_id: user?.id || "guest" },
           }),
         });
+
         const data = await res.json();
         if (!data?.id || !data?.key_id) {
           Alert.alert("Error", "Failed to create Razorpay order");
@@ -51,8 +50,8 @@ export default function CheckoutScreen({
           return;
         }
 
-        // Inline HTML for Razorpay Checkout (no redirects)
-        const checkoutHTML = `
+        // 🧩 Step 2: Build HTML with SDK-load fix
+        const html = `
           <!doctype html>
           <html>
           <head>
@@ -61,40 +60,52 @@ export default function CheckoutScreen({
           </head>
           <body>
             <script>
-              const options = {
-                key: "${data.key_id}",
-                amount: "${amountPaise}",
-                currency: "INR",
-                name: "Candle App",
-                description: "Order Payment",
-                order_id: "${data.id}",
-                prefill: {
-                  name: "${user?.name || "Guest User"}",
-                  email: "${user?.email || ""}",
-                  contact: "${user?.phone || ""}"
-                },
-                theme: { color: "#F37254" },
-                handler: function (response) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    event: "payment_success",
-                    payload: response
-                  }));
-                },
-                modal: {
-                  ondismiss: function () {
+              function openRazorpay() {
+                const options = {
+                  key: "${data.key_id}",
+                  amount: "${amountPaise}",
+                  currency: "INR",
+                  name: "Candle App",
+                  description: "Order Payment",
+                  order_id: "${data.id}",
+                  prefill: {
+                    name: "${user?.name || "Guest User"}",
+                    email: "${user?.email || ""}",
+                    contact: "${user?.phone || ""}"
+                  },
+                  theme: { color: "#F37254" },
+                  handler: function (response) {
                     window.ReactNativeWebView.postMessage(JSON.stringify({
-                      event: "payment_cancel"
+                      event: "payment_success",
+                      payload: response
                     }));
+                  },
+                  modal: {
+                    ondismiss: function () {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        event: "payment_cancel"
+                      }));
+                    }
                   }
+                };
+                const rzp = new Razorpay(options);
+                rzp.open();
+              }
+
+              // ✅ Ensure Razorpay SDK is loaded before running
+              function ensureRazorpayLoaded() {
+                if (typeof Razorpay === "undefined") {
+                  setTimeout(ensureRazorpayLoaded, 200);
+                } else {
+                  openRazorpay();
                 }
-              };
-              const r = new Razorpay(options);
-              r.open();
+              }
+              ensureRazorpayLoaded();
             </script>
           </body>
           </html>
         `;
-        setHtml(checkoutHTML);
+        setCheckoutHTML(html);
       } catch (e) {
         console.error(e);
         Alert.alert("Error", "Payment initialization failed");
@@ -102,15 +113,17 @@ export default function CheckoutScreen({
         setLoading(false);
       }
     })();
-  }, [amountPaise, BACKEND_URL, user?.email, user?.id, user?.name, user?.phone]);
+  }, [amountPaise, BACKEND_URL, user?.id, user?.name, user?.email, user?.phone]);
 
+  // 🧠 Step 3: Handle Razorpay messages
   const onMessage = async (event: any) => {
     try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.event === "payment_success") {
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = msg.payload;
+      const message = JSON.parse(event.nativeEvent.data);
 
-        // Verify on backend & create order record
+      if (message.event === "payment_success") {
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = message.payload;
+
+        // ✅ Verify payment with backend
         const verifyRes = await fetch(`${BACKEND_URL}/api/verify-payment`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -125,41 +138,46 @@ export default function CheckoutScreen({
             shipping_address: user?.address,
           }),
         });
+
         const verifyData = await verifyRes.json();
 
         if (verifyData?.ok) {
-          // 🧹 clear cart
+          // 🧹 Clear cart
           dispatch(clearCart());
 
-          // 🔁 go to confirmation (adjust route & params to your app)
-          navigation.replace("OrderConfirmation", {
-            orderId: verifyData.orderId,
-            orderNumber: verifyData.order_number,
-            paymentId: razorpay_payment_id,
-            amountPaise,
+          // 🔁 Go to confirmation page (expo-router)
+          router.replace({
+            pathname: "/confirmation",
+            params: {
+              orderId: verifyData.orderId,
+              order_number: verifyData.order_number,
+            },
           });
         } else {
           Alert.alert("Verification failed", verifyData?.error || "Unknown error");
         }
-      } else if (msg.event === "payment_cancel") {
+      } else if (message.event === "payment_cancel") {
         Alert.alert("Payment cancelled");
-        navigation.goBack();
+        router.back();
       }
-    } catch (e) {
-      console.error("onMessage parse error:", e);
+    } catch (err) {
+      console.error("onMessage error:", err);
     }
   };
 
   return (
     <View style={{ flex: 1 }}>
       {loading ? (
-        <ActivityIndicator size="large" style={{ flex: 1 }} />
+        <ActivityIndicator size="large" color="#F37254" style={{ flex: 1 }} />
       ) : (
-        html && (
+        checkoutHTML && (
           <WebView
             ref={webviewRef}
             originWhitelist={["*"]}
-            source={{ html, baseUrl: Platform.OS === "web" ? window.location.origin : "https://local" }}
+            source={{
+              html: checkoutHTML,
+              baseUrl: Platform.OS === "web" ? window.location.origin : "https://local",
+            }}
             onMessage={onMessage}
             javaScriptEnabled
             domStorageEnabled
