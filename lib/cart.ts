@@ -154,24 +154,25 @@
 
 
 // lib/cart.ts
-import supabase from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
+// ----------------------
+// Utility helpers
+// ----------------------
 const isUUID = (s?: string | null) =>
   !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s));
 
 function assertUuid(name: string, val?: string | null) {
-  if (!isUUID(val)) {
-    throw new Error(`${name} must be a valid UUID (got "${val ?? ""}")`);
-  }
+  if (!isUUID(val)) throw new Error(`${name} must be a valid UUID (got "${val ?? ""}")`);
 }
 
-// Helper to resolve current cart: prefer user_id, fallback to guest_id
+// ----------------------
+// Get or create a cart
+// ----------------------
 export async function getOrCreateCart(userId?: string, guestId?: string) {
-  if (!userId && !guestId) {
-    throw new Error("getOrCreateCart requires either userId or guestId");
-  }
+  if (!userId && !guestId) throw new Error("getOrCreateCart requires either userId or guestId");
 
-  // Try fetch existing cart
+  // Fetch existing open cart
   let query = supabase.from("carts").select("*").eq("status", "open").limit(1);
   if (userId) query = query.eq("user_id", userId);
   else if (guestId) query = query.eq("guest_id", guestId);
@@ -180,7 +181,7 @@ export async function getOrCreateCart(userId?: string, guestId?: string) {
   if (fetchErr) throw fetchErr;
   if (carts && carts.length > 0) return carts[0];
 
-  // Create new cart row
+  // Create new cart
   const insertData: any = {};
   if (userId) insertData.user_id = userId;
   if (guestId) insertData.guest_id = guestId;
@@ -195,7 +196,9 @@ export async function getOrCreateCart(userId?: string, guestId?: string) {
   return newCart;
 }
 
-// Add item to cart (increments quantity if same product exists)
+// ----------------------
+// Add item to cart
+// ----------------------
 export async function addItemToCart(
   cartId: string,
   product: { id: string; name: string; price_cents: number; sku?: string },
@@ -215,6 +218,7 @@ export async function addItemToCart(
     const item = existing[0];
     const newQty = item.quantity + quantity;
     const newLine = newQty * item.unit_price_cents;
+
     const { error: uErr } = await supabase
       .from("cart_items")
       .update({
@@ -248,7 +252,9 @@ export async function addItemToCart(
   }
 }
 
+// ----------------------
 // Update item quantity
+// ----------------------
 export async function updateCartItemQuantity(itemId: string, newQuantity: number) {
   assertUuid("itemId", itemId);
 
@@ -281,7 +287,9 @@ export async function updateCartItemQuantity(itemId: string, newQuantity: number
   return data;
 }
 
-// Remove item
+// ----------------------
+// Remove item from cart
+// ----------------------
 export async function removeCartItem(itemId: string) {
   assertUuid("itemId", itemId);
   const { error } = await supabase.from("cart_items").delete().eq("id", itemId);
@@ -289,19 +297,25 @@ export async function removeCartItem(itemId: string) {
   return true;
 }
 
+// ----------------------
 // Fetch full cart
+// ----------------------
 export async function fetchCart(cartId: string) {
   assertUuid("cartId", cartId);
+
   const { data, error } = await supabase
     .from("carts")
     .select(`*, cart_items(*)`)
     .eq("id", cartId)
-    .single();
+    .maybeSingle(); // ✅ safer than .single()
   if (error) throw error;
+
   return data;
 }
 
-// Realtime subscribe
+// ----------------------
+// Subscribe to realtime cart updates
+// ----------------------
 export function subscribeToCart(cartId: string, onChange: (payload: any) => void) {
   assertUuid("cartId", cartId);
   const channel = supabase
@@ -322,39 +336,56 @@ export function subscribeToCart(cartId: string, onChange: (payload: any) => void
 }
 
 // ----------------------
-// 🧩 NEW: migrate guest cart → user cart
+// 🧩 Migrate guest cart → user cart (fixed 406 issue)
 // ----------------------
 export async function migrateGuestCartToUser(userId: string, guestId: string) {
   if (!userId || !guestId) return;
 
-  // Find guest cart
-  const { data: guestCart } = await supabase
+  // 🔹 1. Find guest cart (allow 0 results)
+  const { data: guestCart, error: gErr } = await supabase
     .from("carts")
     .select("id")
     .eq("guest_id", guestId)
     .eq("status", "open")
-    .single();
+    .maybeSingle();
 
-  if (!guestCart) return;
+  if (gErr) {
+    console.warn("[migrateGuestCartToUser] guestCart error:", gErr);
+    return;
+  }
+  if (!guestCart) return; // no guest cart to migrate
 
-  // Check if user already has open cart
-  const { data: userCart } = await supabase
+  // 🔹 2. Check if user already has an open cart
+  const { data: userCart, error: uErr } = await supabase
     .from("carts")
     .select("id")
     .eq("user_id", userId)
     .eq("status", "open")
     .maybeSingle();
 
+  if (uErr) {
+    console.warn("[migrateGuestCartToUser] userCart error:", uErr);
+    return;
+  }
+
+  // 🔹 3. Merge or reassign cart
   if (userCart) {
-    await supabase.rpc("merge_cart_items", {
+    const { error: mErr } = await supabase.rpc("merge_cart_items", {
       from_cart: guestCart.id,
       to_cart: userCart.id,
     });
+    if (mErr) {
+      console.error("[migrateGuestCartToUser] RPC merge error:", mErr);
+      return;
+    }
     await supabase.from("carts").delete().eq("id", guestCart.id);
   } else {
-    await supabase
+    const { error: updErr } = await supabase
       .from("carts")
       .update({ user_id: userId, guest_id: null })
       .eq("id", guestCart.id);
+    if (updErr) console.error("[migrateGuestCartToUser] update error:", updErr);
   }
+
+  console.log("[migrateGuestCartToUser] Guest cart migrated successfully");
 }
