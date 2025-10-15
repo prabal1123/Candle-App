@@ -58,7 +58,7 @@
 // };
 
 // features/cart/useCart.ts
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "@/store";
 import {
   addToCart as addToCartAction,
@@ -66,82 +66,52 @@ import {
   updateQuantity as updateQuantityAction,
   clearCart as clearCartAction,
 } from "./cartSlice";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { reconcileGuestIdAsync, getGuestIdSync } from "@/lib/guest";
 
-/** ensure we always have a persistent guest id for non-logged-in users */
-async function getOrCreateGuestId(): Promise<string> {
-  let guestId = await AsyncStorage.getItem("guest_id");
-  if (!guestId) {
-    guestId = crypto.randomUUID();
-    await AsyncStorage.setItem("guest_id", guestId);
-  }
-  return guestId;
-}
-
-/**
- * useCart - wraps redux actions; guarantees a guest_id exists before add.
- * (remote syncing is handled by your sync helpers; this just ensures identity)
- */
 export const useCart = () => {
   const dispatch = useAppDispatch();
   const cart = useAppSelector((s) => s.cart);
 
-  // Make sure a guest_id exists prior to any add (safe to call often)
+  // ✅ ensure stable guest_id across reloads / redirects
+  useEffect(() => {
+    reconcileGuestIdAsync();
+  }, []);
+
   const ensureGuestId = useCallback(async () => {
     try {
-      await getOrCreateGuestId();
+      await reconcileGuestIdAsync();
+      getGuestIdSync(); // ensures it exists in memory
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.warn("[useCart] ensureGuestId failed:", e);
     }
   }, []);
 
   const wrappedAddToCart = useCallback(
     async (item: any) => {
-      try {
-        await ensureGuestId(); // <-- guarantees guest carts work before first add
-        // eslint-disable-next-line no-console
-        console.log("🔔 useCart.addToCart called with:", item);
-        dispatch(addToCartAction(item));
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("❌ useCart.addToCart error:", err);
-        throw err;
-      }
+      await ensureGuestId();
+      dispatch(addToCartAction(item));
     },
     [dispatch, ensureGuestId]
   );
 
   const wrappedRemoveFromCart = useCallback(
-    (id: string) => {
-      // eslint-disable-next-line no-console
-      console.log("🔔 useCart.removeFromCart called with id:", id);
-      dispatch(removeFromCartAction(id));
-    },
+    (id: string) => dispatch(removeFromCartAction(id)),
     [dispatch]
   );
 
   const wrappedUpdateQuantity = useCallback(
-    (id: string, qty: number) => {
-      // eslint-disable-next-line no-console
-      console.log("🔔 useCart.updateQuantity called:", { id, qty });
-      dispatch(updateQuantityAction({ id, qty }));
-    },
+    (id: string, qty: number) => dispatch(updateQuantityAction({ id, qty })),
     [dispatch]
   );
 
-  const wrappedClearCart = useCallback(() => {
-    // eslint-disable-next-line no-console
-    console.log("🔔 useCart.clearCart called");
-    dispatch(clearCartAction());
-  }, [dispatch]);
+  const wrappedClearCart = useCallback(() => dispatch(clearCartAction()), [dispatch]);
 
   return {
     cart,
-    addToCart: wrappedAddToCart,          // async now (returns Promise<void>)
+    addToCart: wrappedAddToCart,
     removeFromCart: wrappedRemoveFromCart,
     updateQuantity: wrappedUpdateQuantity,
     clearCart: wrappedClearCart,
-    ensureGuestId,                         // exported in case you want to call on app start
+    ensureGuestId,
   };
 };

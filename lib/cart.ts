@@ -172,7 +172,7 @@ export async function getOrCreateCart(userId?: string, guestId?: string) {
   }
 
   // Try fetch existing cart
-  let query = supabase.from("carts").select("*").limit(1);
+  let query = supabase.from("carts").select("*").eq("status", "open").limit(1);
   if (userId) query = query.eq("user_id", userId);
   else if (guestId) query = query.eq("guest_id", guestId);
 
@@ -203,7 +203,6 @@ export async function addItemToCart(
 ) {
   assertUuid("cartId", cartId);
 
-  // Check if same product exists
   const { data: existing, error: e } = await supabase
     .from("cart_items")
     .select("*")
@@ -228,7 +227,6 @@ export async function addItemToCart(
     if (uErr) throw uErr;
     return { ...item, quantity: newQty, line_total_cents: newLine };
   } else {
-    // Insert new item
     const { data: inserted, error: iErr } = await supabase
       .from("cart_items")
       .insert([
@@ -321,4 +319,42 @@ export function subscribeToCart(cartId: string, onChange: (payload: any) => void
     .subscribe();
 
   return () => supabase.removeChannel(channel);
+}
+
+// ----------------------
+// 🧩 NEW: migrate guest cart → user cart
+// ----------------------
+export async function migrateGuestCartToUser(userId: string, guestId: string) {
+  if (!userId || !guestId) return;
+
+  // Find guest cart
+  const { data: guestCart } = await supabase
+    .from("carts")
+    .select("id")
+    .eq("guest_id", guestId)
+    .eq("status", "open")
+    .single();
+
+  if (!guestCart) return;
+
+  // Check if user already has open cart
+  const { data: userCart } = await supabase
+    .from("carts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("status", "open")
+    .maybeSingle();
+
+  if (userCart) {
+    await supabase.rpc("merge_cart_items", {
+      from_cart: guestCart.id,
+      to_cart: userCart.id,
+    });
+    await supabase.from("carts").delete().eq("id", guestCart.id);
+  } else {
+    await supabase
+      .from("carts")
+      .update({ user_id: userId, guest_id: null })
+      .eq("id", guestCart.id);
+  }
 }
