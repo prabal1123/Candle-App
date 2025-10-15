@@ -220,7 +220,6 @@
 
 
 
-// app/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { getGuestIdSync } from "@/lib/guest";
@@ -239,17 +238,21 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // helper: migrate guest cart if a user is present
   const migrateIfNeeded = async (uid?: string | null) => {
-    if (!uid) return;
+    if (!uid || typeof window === "undefined") return;
+
     try {
       const guestId = getGuestIdSync();
-      if (guestId) {
-        await migrateGuestCartToUser(uid, guestId);
-        // optional: clear guestId here if your helper doesn’t
-        // clearGuestId();
-        console.log("[AuthProvider] Guest cart migrated");
+      if (!guestId) return;
+
+      const finalCartId = await migrateGuestCartToUser(uid, guestId);
+      if (finalCartId) {
+        // point UI to the correct cart and clear guest markers
+        localStorage.setItem("cart_id", finalCartId);
+        localStorage.removeItem("guest_id");
+        window.dispatchEvent(new Event("cart:migrated")); // for any listeners to refetch
       }
+      console.log("[AuthProvider] Guest cart migrated");
     } catch (e) {
       console.warn("[AuthProvider] Cart migration failed:", e);
     }
@@ -264,15 +267,13 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       const currentUser = data.session?.user ?? null;
       setUser(currentUser);
       setLoading(false);
-      // run migration if user already logged in on initial load
-      if (currentUser?.id) migrateIfNeeded(currentUser.id);
+      if (currentUser?.id) migrateIfNeeded(currentUser.id); // run on initial load if already signed in
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const newUser = session?.user ?? null;
       setUser(newUser);
-      // only on login / session gained
-      if (newUser?.id) migrateIfNeeded(newUser.id);
+      if (newUser?.id) migrateIfNeeded(newUser.id); // run on login
     });
 
     return () => {
