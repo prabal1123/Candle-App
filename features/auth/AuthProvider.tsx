@@ -139,88 +139,9 @@
 
 
 
-
-// import React, { createContext, useContext, useEffect, useState } from "react";
-// import { supabase } from "../../lib/supabase";
-// import { getGuestIdSync } from "@/lib/guest";
-// import { migrateGuestCartToUser } from "@/lib/cart"; // 👈 added
-
-// type AuthContextType = {
-//   user: any;
-//   loading: boolean;
-//   signInWithOtp: (email: string, redirectTo?: string) => Promise<any>;
-//   signOut: () => Promise<void>;
-// };
-
-// const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-//   const [user, setUser] = useState<any>(null);
-//   const [loading, setLoading] = useState(true);
-
-//   useEffect(() => {
-//     let mounted = true;
-
-//     (async () => {
-//       const { data } = await supabase.auth.getSession();
-//       if (!mounted) return;
-//       setUser(data.session?.user ?? null);
-//       setLoading(false);
-//     })();
-
-//     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-//       const newUser = session?.user ?? null;
-//       setUser(newUser);
-
-//       // 👇 only run migration when user logs in
-//       if (newUser?.id) {
-//         try {
-//           const guestId = getGuestIdSync();
-//           await migrateGuestCartToUser(newUser.id, guestId);
-//           console.log("[AuthProvider] Guest cart migrated to user cart");
-//         } catch (err) {
-//           console.warn("[AuthProvider] Cart migration failed:", err);
-//         }
-//       }
-//     });
-
-//     return () => {
-//       try { sub.subscription.unsubscribe(); } catch {}
-//       mounted = false;
-//     };
-//   }, []);
-
-//   const signInWithOtp = async (email: string, redirectTo?: string) => {
-//     const payload: any = { email, options: {} };
-//     if (redirectTo) payload.options.emailRedirectTo = redirectTo;
-//     return supabase.auth.signInWithOtp(payload);
-//   };
-
-//   const signOut = async () => {
-//     await supabase.auth.signOut();
-//     setUser(null);
-//   };
-
-//   return (
-//     <AuthContext.Provider value={{ user, loading, signInWithOtp, signOut }}>
-//       {children}
-//     </AuthContext.Provider>
-//   );
-// };
-
-// export const useAuth = () => {
-//   const ctx = useContext(AuthContext);
-//   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-//   return ctx;
-// };
-
-// export default AuthProvider;
-
-
-
-
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase"; // ensure lib/supabase exports: export const supabase = createClient(...)
+// app/AuthProvider.tsx
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { supabase } from "../../lib/supabase"; // must export: export const supabase = createClient(...)
 import { getGuestIdSync } from "@/lib/guest";
 import { migrateGuestCartToUser } from "@/lib/cart";
 
@@ -233,25 +154,50 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Key used to avoid re-running migration due to token refreshes, etc.
+const migratedKeyFor = (uid: string) => `cart_migrated_for_uid:${uid}`;
+
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const lastHandledUidRef = useRef<string | null>(null);
 
   const migrateIfNeeded = async (uid?: string | null) => {
     if (!uid || typeof window === "undefined") return;
+
+    // Prevent duplicate runs in the same render lifecycle:
+    if (lastHandledUidRef.current === uid) return;
+
+    // Prevent re-runs across token refreshes or INITIAL_SESSION:
+    const flagKey = migratedKeyFor(uid);
+    if (localStorage.getItem(flagKey) === "1") return;
+
     try {
       const guestId = getGuestIdSync();
-      if (!guestId) return;
-
-      const finalCartId = await migrateGuestCartToUser(uid, guestId); // returns string | null
-      if (finalCartId) {
-        localStorage.setItem("cart_id", finalCartId); // point UI to correct cart
-        localStorage.removeItem("guest_id");          // stop reading the deleted guest cart
-        window.dispatchEvent(new Event("cart:migrated")); // optional signal for Cart UI to refetch
+      if (!guestId) {
+        // Nothing to migrate
+        localStorage.setItem(flagKey, "1");
+        lastHandledUidRef.current = uid;
+        return;
       }
-      console.log("[AuthProvider] Guest cart migrated");
+
+      const finalCartId = await migrateGuestCartToUser(uid, guestId);
+      // Only switch the UI to a new cart if we actually got one back
+      if (finalCartId) {
+        localStorage.setItem("cart_id", finalCartId);
+        // We only remove the guest_id AFTER a successful migration
+        localStorage.removeItem("guest_id");
+        // Optional: tell cart UI to refetch
+        window.dispatchEvent(new Event("cart:migrated"));
+      }
+
+      // Mark as done so token refresh / INITIAL_SESSION won’t re-run it
+      localStorage.setItem(flagKey, "1");
+      lastHandledUidRef.current = uid;
+      console.log("[AuthProvider] Guest cart migrated (one-shot)");
     } catch (e) {
       console.warn("[AuthProvider] Cart migration failed:", e);
+      // Important: do NOT set the migrated flag on failure
     }
   };
 
@@ -259,18 +205,29 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     let mounted = true;
 
     (async () => {
-      const { data } = await supabase.auth.getSession();
+      const { data, error } = await supabase.auth.getSession();
       if (!mounted) return;
-      const currentUser = data.session?.user ?? null;
+
+      if (error) console.warn("[AuthProvider] getSession error:", error);
+
+      const currentUser = data?.session?.user ?? null;
       setUser(currentUser);
       setLoading(false);
-      if (currentUser?.id) migrateIfNeeded(currentUser.id); // handle refresh with existing session
+
+      // ❌ Do NOT trigger migration here. It causes double runs with INITIAL_SESSION.
+      // if (currentUser?.id) migrateIfNeeded(currentUser.id);
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
       const newUser = session?.user ?? null;
       setUser(newUser);
-      if (newUser?.id) migrateIfNeeded(newUser.id); // run on login
+
+      // ✅ Only migrate on an actual sign-in event
+      if (event === "SIGNED_IN" && newUser?.id) {
+        migrateIfNeeded(newUser.id);
+      }
+
+      // If you ever want to handle SIGNED_OUT logic, do it below.
     });
 
     return () => {
@@ -286,8 +243,17 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      // Clear user + migration flags so future logins can migrate again
+      const uid = user?.id as string | undefined;
+      if (uid && typeof window !== "undefined") {
+        try { localStorage.removeItem(migratedKeyFor(uid)); } catch {}
+      }
+      setUser(null);
+      // Do NOT touch cart_id/guest_id here; your guest cart code can recreate/rehydrate as needed.
+    }
   };
 
   return (
