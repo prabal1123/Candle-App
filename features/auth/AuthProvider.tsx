@@ -66,70 +66,76 @@
 //   return ctx;
 // };
 
-// app/AuthProvider.tsx
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase";
 
-type AuthContextType = {
-  user: any;
-  loading: boolean;
-  signInWithOtp: (email: string, redirectTo?: string) => Promise<any>;
-  signOut: () => Promise<void>;
-};
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
 
-    (async () => {
-      // Initial session check
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    })();
 
-    // Subscribe to auth changes
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+// // app/AuthProvider.tsx
+// import React, { createContext, useContext, useEffect, useState } from "react";
+// import { supabase } from "../../lib/supabase";
 
-    return () => {
-      try { sub.subscription.unsubscribe(); } catch {}
-      mounted = false;
-    };
-  }, []);
+// type AuthContextType = {
+//   user: any;
+//   loading: boolean;
+//   signInWithOtp: (email: string, redirectTo?: string) => Promise<any>;
+//   signOut: () => Promise<void>;
+// };
 
-  const signInWithOtp = async (email: string, redirectTo?: string) => {
-    const payload: any = { email, options: {} };
-    if (redirectTo) payload.options.emailRedirectTo = redirectTo;
-    return supabase.auth.signInWithOtp(payload);
-  };
+// const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
+// const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+//   const [user, setUser] = useState<any>(null);
+//   const [loading, setLoading] = useState(true);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, signInWithOtp, signOut }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
+//   useEffect(() => {
+//     let mounted = true;
 
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
-};
+//     (async () => {
+//       // Initial session check
+//       const { data } = await supabase.auth.getSession();
+//       if (!mounted) return;
+//       setUser(data.session?.user ?? null);
+//       setLoading(false);
+//     })();
 
-export default AuthProvider;
+//     // Subscribe to auth changes
+//     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+//       setUser(session?.user ?? null);
+//     });
+
+//     return () => {
+//       try { sub.subscription.unsubscribe(); } catch {}
+//       mounted = false;
+//     };
+//   }, []);
+
+//   const signInWithOtp = async (email: string, redirectTo?: string) => {
+//     const payload: any = { email, options: {} };
+//     if (redirectTo) payload.options.emailRedirectTo = redirectTo;
+//     return supabase.auth.signInWithOtp(payload);
+//   };
+
+//   const signOut = async () => {
+//     await supabase.auth.signOut();
+//     setUser(null);
+//   };
+
+//   return (
+//     <AuthContext.Provider value={{ user, loading, signInWithOtp, signOut }}>
+//       {children}
+//     </AuthContext.Provider>
+//   );
+// };
+
+// export const useAuth = () => {
+//   const ctx = useContext(AuthContext);
+//   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+//   return ctx;
+// };
+
+// export default AuthProvider;
 
 
 
@@ -209,3 +215,94 @@ export default AuthProvider;
 // };
 
 // export default AuthProvider;
+
+
+
+
+
+// app/AuthProvider.tsx
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import { getGuestIdSync } from "@/lib/guest";
+import { migrateGuestCartToUser } from "@/lib/cart";
+
+type AuthContextType = {
+  user: any;
+  loading: boolean;
+  signInWithOtp: (email: string, redirectTo?: string) => Promise<any>;
+  signOut: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // helper: migrate guest cart if a user is present
+  const migrateIfNeeded = async (uid?: string | null) => {
+    if (!uid) return;
+    try {
+      const guestId = getGuestIdSync();
+      if (guestId) {
+        await migrateGuestCartToUser(uid, guestId);
+        // optional: clear guestId here if your helper doesn’t
+        // clearGuestId();
+        console.log("[AuthProvider] Guest cart migrated");
+      }
+    } catch (e) {
+      console.warn("[AuthProvider] Cart migration failed:", e);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      setLoading(false);
+      // run migration if user already logged in on initial load
+      if (currentUser?.id) migrateIfNeeded(currentUser.id);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const newUser = session?.user ?? null;
+      setUser(newUser);
+      // only on login / session gained
+      if (newUser?.id) migrateIfNeeded(newUser.id);
+    });
+
+    return () => {
+      try { sub.subscription.unsubscribe(); } catch {}
+      mounted = false;
+    };
+  }, []);
+
+  const signInWithOtp = async (email: string, redirectTo?: string) => {
+    const payload: any = { email, options: {} };
+    if (redirectTo) payload.options.emailRedirectTo = redirectTo;
+    return supabase.auth.signInWithOtp(payload);
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, signInWithOtp, signOut }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
+};
+
+export default AuthProvider;
