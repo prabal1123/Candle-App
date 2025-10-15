@@ -66,9 +66,78 @@
 //   return ctx;
 // };
 
-// app/AuthProvider.tsx
+// // app/AuthProvider.tsx
+// import React, { createContext, useContext, useEffect, useState } from "react";
+// import { supabase } from "../../lib/supabase";
+
+// type AuthContextType = {
+//   user: any;
+//   loading: boolean;
+//   signInWithOtp: (email: string, redirectTo?: string) => Promise<any>;
+//   signOut: () => Promise<void>;
+// };
+
+// const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+//   const [user, setUser] = useState<any>(null);
+//   const [loading, setLoading] = useState(true);
+
+//   useEffect(() => {
+//     let mounted = true;
+
+//     (async () => {
+//       // Initial session check
+//       const { data } = await supabase.auth.getSession();
+//       if (!mounted) return;
+//       setUser(data.session?.user ?? null);
+//       setLoading(false);
+//     })();
+
+//     // Subscribe to auth changes
+//     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+//       setUser(session?.user ?? null);
+//     });
+
+//     return () => {
+//       try { sub.subscription.unsubscribe(); } catch {}
+//       mounted = false;
+//     };
+//   }, []);
+
+//   const signInWithOtp = async (email: string, redirectTo?: string) => {
+//     const payload: any = { email, options: {} };
+//     if (redirectTo) payload.options.emailRedirectTo = redirectTo;
+//     return supabase.auth.signInWithOtp(payload);
+//   };
+
+//   const signOut = async () => {
+//     await supabase.auth.signOut();
+//     setUser(null);
+//   };
+
+//   return (
+//     <AuthContext.Provider value={{ user, loading, signInWithOtp, signOut }}>
+//       {children}
+//     </AuthContext.Provider>
+//   );
+// };
+
+// export const useAuth = () => {
+//   const ctx = useContext(AuthContext);
+//   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+//   return ctx;
+// };
+
+// export default AuthProvider;
+
+
+
+
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { getGuestIdSync } from "@/lib/guest";
+import { migrateGuestCartToUser } from "@/lib/cart"; // 👈 added
 
 type AuthContextType = {
   user: any;
@@ -87,16 +156,26 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     let mounted = true;
 
     (async () => {
-      // Initial session check
       const { data } = await supabase.auth.getSession();
       if (!mounted) return;
       setUser(data.session?.user ?? null);
       setLoading(false);
     })();
 
-    // Subscribe to auth changes
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const newUser = session?.user ?? null;
+      setUser(newUser);
+
+      // 👇 only run migration when user logs in
+      if (newUser?.id) {
+        try {
+          const guestId = getGuestIdSync();
+          await migrateGuestCartToUser(newUser.id, guestId);
+          console.log("[AuthProvider] Guest cart migrated to user cart");
+        } catch (err) {
+          console.warn("[AuthProvider] Cart migration failed:", err);
+        }
+      }
     });
 
     return () => {
