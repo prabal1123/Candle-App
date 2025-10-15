@@ -222,145 +222,242 @@
 // }
 
 
-import React, { useEffect, useCallback } from "react";
+// import React, { useEffect, useCallback } from "react";
+// import { View, Text, FlatList, Pressable, Alert, Image } from "react-native";
+// import { useRouter } from "expo-router";
+// import supabase from "@/lib/supabase";
+// import { useAppSelector, useAppDispatch } from "@/store";
+// import { loadCart } from "@/features/cart/cartSlice";
+// import { syncUpdateQuantity, syncRemoveItem, syncClearCart } from "@/lib/cartSync";
+// import { storage } from "@/lib/storage";
+// import { cartStyles as styles } from "@/styles/cartStyles";
+
+// // -------------------------
+// // 🧩 Utilities
+// // -------------------------
+
+// function makeUUID(): string {
+//   return (global as any).crypto?.randomUUID?.() ??
+//     "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+//       const r = (Math.random() * 16) | 0;
+//       const v = c === "x" ? r : (r & 0x3) | 0x8;
+//       return v.toString(16);
+//     });
+// }
+
+// async function getOrCreateGuestId(): Promise<string> {
+//   const existing = await storage.getItem("guest_id");
+//   if (existing) return existing;
+//   const newId = makeUUID();
+//   await storage.setItem("guest_id", newId);
+//   return newId;
+// }
+
+// async function getUserOrGuestIds() {
+//   try {
+//     const { data } = await supabase.auth.getSession();
+//     const userId = data?.session?.user?.id ?? null;
+//     const guestId = userId ? null : await getOrCreateGuestId();
+//     return { userId, guestId };
+//   } catch {
+//     const guestId = await getOrCreateGuestId();
+//     return { userId: null, guestId };
+//   }
+// }
+
+// // -------------------------
+// // 🛒 CartScreen
+// // -------------------------
+
+// export default function CartScreen() {
+//   const dispatch = useAppDispatch();
+//   const router = useRouter();
+
+//   // ✅ All hooks at top (no invalid hook call)
+//   const items = useAppSelector((s) => s.cart.items);
+//   const cartId = useAppSelector((s) => s.cart.cartId);
+
+//   // ✅ Load cart on mount
+//   useEffect(() => {
+//     (async () => {
+//       const ids = await getUserOrGuestIds();
+//       dispatch(loadCart(ids));
+//     })();
+//   }, [dispatch]);
+
+//   const subtotal = items.reduce(
+//     (sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1),
+//     0
+//   );
+
+//   // -------------------------
+//   // 🔹 Handlers
+//   // -------------------------
+
+//   const onCheckout = useCallback(() => {
+//     if (items.length === 0) {
+//       Alert.alert("Your cart is empty", "Add something before checking out.");
+//       return;
+//     }
+//     router.push("/checkout");
+//   }, [items, router]);
+
+//   const onInc = useCallback(
+//     async (productId: string) => {
+//       const ids = await getUserOrGuestIds();
+//       const it = items.find((i) => i.id === productId);
+//       if (it) await syncUpdateQuantity(dispatch, ids, cartId, productId, it.quantity + 1);
+//     },
+//     [dispatch, items, cartId]
+//   );
+
+//   const onDec = useCallback(
+//     async (productId: string) => {
+//       const ids = await getUserOrGuestIds();
+//       const it = items.find((i) => i.id === productId);
+//       if (!it) return;
+//       const newQty = it.quantity - 1;
+
+//       if (newQty <= 0) {
+//         Alert.alert("Remove item", "Remove this item from cart?", [
+//           { text: "Cancel", style: "cancel" },
+//           {
+//             text: "Remove",
+//             style: "destructive",
+//             onPress: () => syncRemoveItem(dispatch, ids, cartId, productId),
+//           },
+//         ]);
+//       } else {
+//         await syncUpdateQuantity(dispatch, ids, cartId, productId, newQty);
+//       }
+//     },
+//     [dispatch, items, cartId]
+//   );
+
+//   const onRemove = useCallback(
+//     async (productId: string) => {
+//       const ids = await getUserOrGuestIds();
+//       await syncRemoveItem(dispatch, ids, cartId, productId);
+//     },
+//     [dispatch, cartId]
+//   );
+
+//   const onClearCart = useCallback(async () => {
+//     const ids = await getUserOrGuestIds();
+//     Alert.alert("Clear cart", "Remove all items from cart?", [
+//       { text: "Cancel", style: "cancel" },
+//       { text: "Clear", style: "destructive", onPress: () => syncClearCart(dispatch, ids, cartId) },
+//     ]);
+//   }, [dispatch, cartId]);
+
+//   // -------------------------
+//   // 🧱 UI
+//   // -------------------------
+
+//   return (
+//     <View style={styles.container}>
+//       <Text style={styles.title}>Your Cart</Text>
+
+//       <FlatList
+//         data={items}
+//         keyExtractor={(i) => i.id}
+//         renderItem={({ item }) => (
+//           <View style={styles.row}>
+//             {item.image ? (
+//               <Image source={{ uri: item.image }} style={styles.image} />
+//             ) : (
+//               <View style={[styles.image, { backgroundColor: "#f0f0f0" }]} />
+//             )}
+
+//             <View style={styles.info}>
+//               {/* ✅ Fixed: use correct name field */}
+//               <Text style={styles.name}>{item.title || item.name || "Unnamed Product"}</Text>
+//               <Text style={styles.price}>₹{(item.price || 0).toFixed(2)}</Text>
+
+//               <View style={styles.qtyRow}>
+//                 <Pressable onPress={() => onDec(item.id)} style={styles.qtyBtn}>
+//                   <Text>-</Text>
+//                 </Pressable>
+
+//                 <Text style={styles.qtyText}>{item.quantity}</Text>
+
+//                 <Pressable onPress={() => onInc(item.id)} style={styles.qtyBtn}>
+//                   <Text>+</Text>
+//                 </Pressable>
+
+//                 <Pressable onPress={() => onRemove(item.id)} style={styles.remove}>
+//                   <Text style={{ color: "red" }}>Remove</Text>
+//                 </Pressable>
+//               </View>
+//             </View>
+//           </View>
+//         )}
+//         ListEmptyComponent={<Text style={styles.empty}>Your cart is empty.</Text>}
+//       />
+
+//       <View style={styles.footer}>
+//         <Text style={styles.subtotal}>Subtotal: ₹{subtotal.toFixed(2)}</Text>
+//         <Pressable style={styles.checkoutBtn} onPress={onCheckout}>
+//           <Text style={styles.checkoutText}>Proceed to Checkout</Text>
+//         </Pressable>
+//         <Pressable onPress={onClearCart} style={{ marginTop: 8 }}>
+//           <Text style={{ color: "red", textAlign: "center" }}>Clear cart</Text>
+//         </Pressable>
+//       </View>
+//     </View>
+//   );
+// }
+
+
+
+import React, { useCallback } from "react";
 import { View, Text, FlatList, Pressable, Alert, Image } from "react-native";
 import { useRouter } from "expo-router";
-import supabase from "@/lib/supabase";
-import { useAppSelector, useAppDispatch } from "@/store";
-import { loadCart } from "@/features/cart/cartSlice";
-import { syncUpdateQuantity, syncRemoveItem, syncClearCart } from "@/lib/cartSync";
-import { storage } from "@/lib/storage";
+import { useCart } from "@/features/cart/useCart";
 import { cartStyles as styles } from "@/styles/cartStyles";
 
-// -------------------------
-// 🧩 Utilities
-// -------------------------
-
-function makeUUID(): string {
-  return (global as any).crypto?.randomUUID?.() ??
-    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === "x" ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-}
-
-async function getOrCreateGuestId(): Promise<string> {
-  const existing = await storage.getItem("guest_id");
-  if (existing) return existing;
-  const newId = makeUUID();
-  await storage.setItem("guest_id", newId);
-  return newId;
-}
-
-async function getUserOrGuestIds() {
-  try {
-    const { data } = await supabase.auth.getSession();
-    const userId = data?.session?.user?.id ?? null;
-    const guestId = userId ? null : await getOrCreateGuestId();
-    return { userId, guestId };
-  } catch {
-    const guestId = await getOrCreateGuestId();
-    return { userId: null, guestId };
-  }
-}
-
-// -------------------------
-// 🛒 CartScreen
-// -------------------------
-
 export default function CartScreen() {
-  const dispatch = useAppDispatch();
   const router = useRouter();
-
-  // ✅ All hooks at top (no invalid hook call)
-  const items = useAppSelector((s) => s.cart.items);
-  const cartId = useAppSelector((s) => s.cart.cartId);
-
-  // ✅ Load cart on mount
-  useEffect(() => {
-    (async () => {
-      const ids = await getUserOrGuestIds();
-      dispatch(loadCart(ids));
-    })();
-  }, [dispatch]);
-
-  const subtotal = items.reduce(
-    (sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1),
-    0
-  );
-
-  // -------------------------
-  // 🔹 Handlers
-  // -------------------------
+  const { items, subtotal, count, updateQty, remove, clear } = useCart();
 
   const onCheckout = useCallback(() => {
-    if (items.length === 0) {
+    if (count === 0) {
       Alert.alert("Your cart is empty", "Add something before checking out.");
       return;
     }
     router.push("/checkout");
-  }, [items, router]);
+  }, [count, router]);
 
-  const onInc = useCallback(
-    async (productId: string) => {
-      const ids = await getUserOrGuestIds();
-      const it = items.find((i) => i.id === productId);
-      if (it) await syncUpdateQuantity(dispatch, ids, cartId, productId, it.quantity + 1);
-    },
-    [dispatch, items, cartId]
-  );
+  const onInc = useCallback((key: string, currentQty: number) => {
+    updateQty(key, currentQty + 1);
+  }, [updateQty]);
 
-  const onDec = useCallback(
-    async (productId: string) => {
-      const ids = await getUserOrGuestIds();
-      const it = items.find((i) => i.id === productId);
-      if (!it) return;
-      const newQty = it.quantity - 1;
+  const onDec = useCallback((key: string, currentQty: number) => {
+    const newQty = currentQty - 1;
+    if (newQty <= 0) {
+      Alert.alert("Remove item", "Remove this item from cart?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => remove(key) },
+      ]);
+    } else {
+      updateQty(key, newQty);
+    }
+  }, [updateQty, remove]);
 
-      if (newQty <= 0) {
-        Alert.alert("Remove item", "Remove this item from cart?", [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Remove",
-            style: "destructive",
-            onPress: () => syncRemoveItem(dispatch, ids, cartId, productId),
-          },
-        ]);
-      } else {
-        await syncUpdateQuantity(dispatch, ids, cartId, productId, newQty);
-      }
-    },
-    [dispatch, items, cartId]
-  );
-
-  const onRemove = useCallback(
-    async (productId: string) => {
-      const ids = await getUserOrGuestIds();
-      await syncRemoveItem(dispatch, ids, cartId, productId);
-    },
-    [dispatch, cartId]
-  );
-
-  const onClearCart = useCallback(async () => {
-    const ids = await getUserOrGuestIds();
+  const onClearCart = useCallback(() => {
     Alert.alert("Clear cart", "Remove all items from cart?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: () => syncClearCart(dispatch, ids, cartId) },
+      { text: "Clear", style: "destructive", onPress: () => clear() },
     ]);
-  }, [dispatch, cartId]);
-
-  // -------------------------
-  // 🧱 UI
-  // -------------------------
+  }, [clear]);
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Your Cart</Text>
 
       <FlatList
-        data={items}
-        keyExtractor={(i) => i.id}
+        data={items} // [{ key, id, title, price, qty, image }]
+        keyExtractor={(i) => i.key}
         renderItem={({ item }) => (
           <View style={styles.row}>
             {item.image ? (
@@ -370,22 +467,21 @@ export default function CartScreen() {
             )}
 
             <View style={styles.info}>
-              {/* ✅ Fixed: use correct name field */}
-              <Text style={styles.name}>{item.title || item.name || "Unnamed Product"}</Text>
-              <Text style={styles.price}>₹{(item.price || 0).toFixed(2)}</Text>
+              <Text style={styles.name}>{item.title || "Unnamed Product"}</Text>
+              <Text style={styles.price}>₹{Number(item.price || 0).toFixed(2)}</Text>
 
               <View style={styles.qtyRow}>
-                <Pressable onPress={() => onDec(item.id)} style={styles.qtyBtn}>
+                <Pressable onPress={() => onDec(item.key, item.qty)} style={styles.qtyBtn}>
                   <Text>-</Text>
                 </Pressable>
 
-                <Text style={styles.qtyText}>{item.quantity}</Text>
+                <Text style={styles.qtyText}>{item.qty}</Text>
 
-                <Pressable onPress={() => onInc(item.id)} style={styles.qtyBtn}>
+                <Pressable onPress={() => onInc(item.key, item.qty)} style={styles.qtyBtn}>
                   <Text>+</Text>
                 </Pressable>
 
-                <Pressable onPress={() => onRemove(item.id)} style={styles.remove}>
+                <Pressable onPress={() => remove(item.key)} style={styles.remove}>
                   <Text style={{ color: "red" }}>Remove</Text>
                 </Pressable>
               </View>
@@ -396,7 +492,7 @@ export default function CartScreen() {
       />
 
       <View style={styles.footer}>
-        <Text style={styles.subtotal}>Subtotal: ₹{subtotal.toFixed(2)}</Text>
+        <Text style={styles.subtotal}>Subtotal: ₹{Number(subtotal).toFixed(2)}</Text>
         <Pressable style={styles.checkoutBtn} onPress={onCheckout}>
           <Text style={styles.checkoutText}>Proceed to Checkout</Text>
         </Pressable>

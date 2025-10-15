@@ -57,61 +57,99 @@
 //   };
 // };
 
-// features/cart/useCart.ts
-import { useCallback, useEffect } from "react";
+
+// // features/cart/useCart.ts
+// import { useCallback, useEffect } from "react";
+// import { useAppDispatch, useAppSelector } from "@/store";
+// import {
+//   addToCart as addToCartAction,
+//   removeFromCart as removeFromCartAction,
+//   updateQuantity as updateQuantityAction,
+//   clearCart as clearCartAction,
+// } from "./cartSlice";
+// import { reconcileGuestIdAsync, getGuestIdSync } from "@/lib/guest";
+
+// export const useCart = () => {
+//   const dispatch = useAppDispatch();
+//   const cart = useAppSelector((s) => s.cart);
+
+//   // ✅ ensure stable guest_id across reloads / redirects
+//   useEffect(() => {
+//     reconcileGuestIdAsync();
+//   }, []);
+
+//   const ensureGuestId = useCallback(async () => {
+//     try {
+//       await reconcileGuestIdAsync();
+//       getGuestIdSync(); // ensures it exists in memory
+//     } catch (e) {
+//       console.warn("[useCart] ensureGuestId failed:", e);
+//     }
+//   }, []);
+
+//   const wrappedAddToCart = useCallback(
+//     async (item: any) => {
+//       await ensureGuestId();
+//       dispatch(addToCartAction(item));
+//     },
+//     [dispatch, ensureGuestId]
+//   );
+
+//   const wrappedRemoveFromCart = useCallback(
+//     (id: string) => dispatch(removeFromCartAction(id)),
+//     [dispatch]
+//   );
+
+//   const wrappedUpdateQuantity = useCallback(
+//     (id: string, qty: number) => dispatch(updateQuantityAction({ id, qty })),
+//     [dispatch]
+//   );
+
+//   const wrappedClearCart = useCallback(() => dispatch(clearCartAction()), [dispatch]);
+
+//   return {
+//     cart,
+//     addToCart: wrappedAddToCart,
+//     removeFromCart: wrappedRemoveFromCart,
+//     updateQuantity: wrappedUpdateQuantity,
+//     clearCart: wrappedClearCart,
+//     ensureGuestId,
+//   };
+// };
+
+
+// /features/cart/useCart.ts
+import { useCallback, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "@/store";
-import {
-  addToCart as addToCartAction,
-  removeFromCart as removeFromCartAction,
-  updateQuantity as updateQuantityAction,
-  clearCart as clearCartAction,
-} from "./cartSlice";
-import { reconcileGuestIdAsync, getGuestIdSync } from "@/lib/guest";
+import { addItem, setQty, removeItem, clearCart, CartItem } from "./cartSlice";
+import { selectCartItems, selectItemCount, selectSubtotal, selectCartMap } from "./selectors";
 
-export const useCart = () => {
+export function useCart() {
   const dispatch = useAppDispatch();
-  const cart = useAppSelector((s) => s.cart);
 
-  // ✅ ensure stable guest_id across reloads / redirects
-  useEffect(() => {
-    reconcileGuestIdAsync();
-  }, []);
+  const items = useAppSelector(selectCartItems);
+  const map = useAppSelector(selectCartMap);
+  const count = useAppSelector(selectItemCount);
+  const subtotal = useAppSelector(selectSubtotal);
 
-  const ensureGuestId = useCallback(async () => {
-    try {
-      await reconcileGuestIdAsync();
-      getGuestIdSync(); // ensures it exists in memory
-    } catch (e) {
-      console.warn("[useCart] ensureGuestId failed:", e);
-    }
-  }, []);
+  const add = useCallback((item: CartItem) => dispatch(addItem(item)), [dispatch]);
+  const updateQty = useCallback((key: string, qty: number) => dispatch(setQty({ key, qty })), [dispatch]);
+  const remove = useCallback((key: string) => dispatch(removeItem(key)), [dispatch]);
+  const clear = useCallback(() => dispatch(clearCart()), [dispatch]);
 
-  const wrappedAddToCart = useCallback(
-    async (item: any) => {
-      await ensureGuestId();
-      dispatch(addToCartAction(item));
-    },
-    [dispatch, ensureGuestId]
+  // Back-compat aliases (so existing code still works)
+  const addToCart = add;
+  const updateQuantity = updateQty;
+  const removeFromCart = remove;
+  const clearCartNow = clear;
+
+  return useMemo(
+    () => ({
+      // primary API
+      items, map, count, subtotal, add, updateQty, remove, clear,
+      // aliases
+      addToCart, updateQuantity, removeFromCart, clearCart: clearCartNow,
+    }),
+    [items, map, count, subtotal, add, updateQty, remove, clear, addToCart, updateQuantity, removeFromCart, clearCartNow]
   );
-
-  const wrappedRemoveFromCart = useCallback(
-    (id: string) => dispatch(removeFromCartAction(id)),
-    [dispatch]
-  );
-
-  const wrappedUpdateQuantity = useCallback(
-    (id: string, qty: number) => dispatch(updateQuantityAction({ id, qty })),
-    [dispatch]
-  );
-
-  const wrappedClearCart = useCallback(() => dispatch(clearCartAction()), [dispatch]);
-
-  return {
-    cart,
-    addToCart: wrappedAddToCart,
-    removeFromCart: wrappedRemoveFromCart,
-    updateQuantity: wrappedUpdateQuantity,
-    clearCart: wrappedClearCart,
-    ensureGuestId,
-  };
-};
+}
