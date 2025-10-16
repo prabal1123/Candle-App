@@ -216,3 +216,46 @@
 //     return res.status(500).json({ ok: false, error: "Server error" });
 //   }
 // };
+
+
+// api/order.js
+const { createClient } = require("@supabase/supabase-js");
+
+function cors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "authorization, x-client-info, content-type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+}
+
+module.exports = async (req, res) => {
+  cors(res);
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+
+  try {
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } }
+    );
+
+    const { id, order_number } = req.query;
+    if (!id && !order_number)
+      return res.status(400).json({ ok: false, error: "Provide id or order_number" });
+
+    let query = supabase.from("orders").select("*").limit(1);
+    if (id) query = query.eq("id", id);
+    else query = query.eq("order_number", order_number);
+
+    const { data, error } = await query.single();
+    if (error || !data) {
+      console.error("order fetch error:", error);
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    return res.status(200).json({ ok: true, order: data });
+  } catch (err) {
+    console.error("api/order.js error:", err);
+    return res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
+};
