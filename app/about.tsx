@@ -157,7 +157,7 @@ export default function About(): JSX.Element {
           <Text style={styles.lead}>
             At Candle Co, our journey began with a simple desire: to create candles that
             not only illuminate spaces but also evoke emotions and memories. Founded in
-            2018 by Sarah and Mark, our company is built on a passion for craftsmanship,
+            2018 by Ritesh and Madhu, our company is built on a passion for craftsmanship,
             quality ingredients, and sustainable practices. We believe in the power of scent
             to transform environments and enhance well-being, and we strive to deliver
             products that embody these principles.
