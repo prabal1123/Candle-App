@@ -124,8 +124,184 @@
 
 
 
+// // app/product/index.tsx
+// import React, { useEffect, useState } from "react";
+// import {
+//   View,
+//   Text,
+//   Image,
+//   Pressable,
+//   ScrollView,
+//   ActivityIndicator,
+//   useWindowDimensions,
+// } from "react-native";
+// import { Link, useLocalSearchParams } from "expo-router";
+// import { productListStyles as styles } from "@/styles/productList";
+// import { getProducts, Product } from "@/features/products/api";
+
+// const CATEGORY_LABELS: Record<string, string> = {
+//   jar: "Jar & Container",
+//   "gift-set": "Gift Set",
+//   decorative: "Decorative",
+// };
+
+// // URL -> DB value for product_type
+// const CATEGORY_TO_DB: Record<string, string> = {
+//   jar: "jar",
+//   "gift-set": "gift-set",
+//   decorative: "decorative",
+// };
+
+// export default function ProductListPage() {
+//   // e.g. /product?category=jar
+//   const { category } = useLocalSearchParams<{ category?: string }>();
+//   const activeCategory = (category ?? "").toString().trim();
+//   const dbValue = CATEGORY_TO_DB[activeCategory]; // undefined if no/unknown category
+//   const isFiltered = Boolean(dbValue);
+
+//   const [products, setProducts] = useState<Product[]>([]);
+//   const [page, setPage] = useState<number>(1);
+//   const basePageSize = 9;
+//   // When filtering client-side, fetch a bigger chunk so we can filter in memory
+//   const effectivePageSize = isFiltered ? 200 : basePageSize;
+
+//   const [total, setTotal] = useState<number>(0);
+//   const [loading, setLoading] = useState<boolean>(true);
+
+//   const { width: screenWidth } = useWindowDimensions();
+
+//   // columns based on screen width
+//   const columns = (() => {
+//     if (screenWidth <= 420) return 2;   // mobile
+//     if (screenWidth <= 900) return 3;   // tablet
+//     return 4;                           // desktop
+//   })();
+
+//   // card width calculation
+//   const horizontalPadding = 28 * 2; // from styles.root
+//   const gapBetween = 12;
+//   const columnWidth = Math.floor(
+//     (screenWidth - horizontalPadding - gapBetween * (columns - 1)) / columns
+//   );
+
+//   // reset to page 1 when the category changes
+//   useEffect(() => {
+//     setPage(1);
+//   }, [dbValue]);
+
+//   async function load() {
+//     setLoading(true);
+//     try {
+//       const { products: rows, total: count } = await getProducts({
+//         page,
+//         pageSize: effectivePageSize,
+//         orderBy: { column: "created_at", ascending: false },
+//       });
+
+//       // ✅ filter using DB column product_type
+//       const filtered = isFiltered
+//         ? rows.filter((p: any) => p.product_type === dbValue)
+//         : rows;
+
+//       setProducts(filtered);
+//       setTotal(isFiltered ? filtered.length : count);
+//     } catch (err) {
+//       console.error("Failed to load products", err);
+//     } finally {
+//       setLoading(false);
+//     }
+//   }
+
+//   useEffect(() => {
+//     load();
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, [page, dbValue]);
+
+//   const totalPages = Math.max(1, Math.ceil(total / basePageSize));
+//   const heading =
+//     dbValue && CATEGORY_LABELS[activeCategory]
+//       ? CATEGORY_LABELS[activeCategory]
+//       : "Aromatic Candles";
+
+//   if (loading) {
+//     return (
+//       <View style={{ flex: 1, height: 300, justifyContent: "center", alignItems: "center" }}>
+//         <ActivityIndicator size="large" />
+//         <Text style={{ marginTop: 8 }}>Loading products...</Text>
+//       </View>
+//     );
+//   }
+
+//   return (
+//     <ScrollView contentContainerStyle={styles.root}>
+//       <Text style={styles.shopHeading}>{heading}</Text>
+
+//       <View style={styles.gridColWrapper}>
+//         {products.map((p) => (
+//           <View key={p.id} style={[{ width: columnWidth, padding: 6 }]}>
+//             <Link href={`/product/${p.id}`} asChild>
+//               <Pressable style={styles.productCard}>
+//                 <Image
+//                   source={
+//                     p.image_urls?.[0]?.url
+//                       ? { uri: p.image_urls[0].url }
+//                       : require("../../assets/images/logo.png")
+//                   }
+//                   style={[
+//                     styles.productImage,
+//                     screenWidth <= 420 ? { height: 140 } : { height: 180 },
+//                   ]}
+//                 />
+//                 <View style={styles.productInfo}>
+//                   <Text style={styles.productTitle} numberOfLines={2} ellipsizeMode="tail">
+//                     {p.name}
+//                   </Text>
+//                   <Text style={styles.productPrice}>
+//                     ₹{((p.price_cents ?? 0) / 100).toFixed(2)}
+//                   </Text>
+//                 </View>
+//               </Pressable>
+//             </Link>
+//           </View>
+//         ))}
+//       </View>
+
+//       {/* Pagination is only meaningful when not filtering on the client */}
+//       {!isFiltered && (
+//         <View style={styles.pagination}>
+//           <Pressable
+//             style={styles.pageBtn}
+//             onPress={() => setPage((s) => Math.max(1, s - 1))}
+//             disabled={page === 1}
+//           >
+//             <Text>◀</Text>
+//           </Pressable>
+
+//           <View style={{ flexDirection: "row", alignItems: "center" }}>
+//             <Text style={{ marginHorizontal: 8 }}>{page}</Text>
+//             <Text style={{ color: "#666" }}> / {totalPages}</Text>
+//           </View>
+
+//           <Pressable
+//             style={styles.pageBtn}
+//             onPress={() => setPage((s) => Math.min(totalPages, s + 1))}
+//             disabled={page === totalPages}
+//           >
+//             <Text>▶</Text>
+//           </Pressable>
+//         </View>
+//       )}
+//     </ScrollView>
+//   );
+// }
+
+
+
+
+
+
 // app/product/index.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -152,6 +328,99 @@ const CATEGORY_TO_DB: Record<string, string> = {
   decorative: "decorative",
 };
 
+// ---------- helpers ----------
+function formatPriceFromCents(cents?: number | null) {
+  if (!cents && cents !== 0) return "0.00";
+  return (cents! / 100).toFixed(2);
+}
+
+function getColor(p: any): string | null {
+  const m = p?.metadata;
+  const meta = (m && (m.color ?? m.colour)) ?? (typeof m === "object" ? (m?.color ?? m?.colour) : null);
+  if (meta) return String(meta);
+  const name: string = p?.name ?? "";
+  const m1 = name.match(/colour\s*:\s*([A-Za-z]+)\s*$/i);
+  if (m1) return m1[1];
+  const m2 = name.match(/\(([A-Za-z]+)\)\s*$/);
+  if (m2) return m2[1];
+  return null;
+}
+
+function normalizeNameForGrouping(name?: string | null): string {
+  if (!name) return "";
+  // remove trailing “Colour : X” or “(X)”
+  let n = name.replace(/colour\s*:\s*[A-Za-z]+\s*$/i, "");
+  n = n.replace(/\([A-Za-z]+\)\s*$/, "");
+  return n.trim().toLowerCase();
+}
+
+type Family = {
+  key: string;
+  scent: string | null;
+  baseName: string;
+  ids: string[];
+  colors: string[];
+  minPrice: number; // cents
+  maxPrice: number; // cents
+  rep: Product;     // representative item to open on click
+};
+
+function buildFamilies(rows: Product[]): Family[] {
+  const map = new Map<string, Family>();
+
+  // color preference for representative selection
+  const colorScore = (c?: string | null) => {
+    const v = (c ?? "").toLowerCase();
+    if (v === "white") return 3;
+    if (v === "green") return 2;
+    if (v === "red") return 1;
+    return 0;
+  };
+
+  for (const p of rows) {
+    const baseName = normalizeNameForGrouping(p.name);
+    const scent = p.scent ?? null;
+    const color = getColor(p) ?? "Default";
+    const key = `${(scent ?? "").toLowerCase()}::${baseName}`;
+
+    const price = p.price_cents ?? 0;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        scent,
+        baseName,
+        ids: [p.id],
+        colors: [color],
+        minPrice: price,
+        maxPrice: price,
+        rep: p,
+      });
+    } else {
+      const f = map.get(key)!;
+      f.ids.push(p.id);
+      if (!f.colors.includes(color)) f.colors.push(color);
+      f.minPrice = Math.min(f.minPrice, price);
+      f.maxPrice = Math.max(f.maxPrice, price);
+
+      // choose better representative: prefer color priority; else most recent by created_at if you have it
+      const currentScore = colorScore(getColor(f.rep));
+      const candidateScore = colorScore(color);
+      if (candidateScore > currentScore) {
+        f.rep = p;
+      }
+    }
+  }
+
+  // sort colors alphabetically for neatness
+  for (const f of map.values()) {
+    f.colors.sort((a, b) => a.localeCompare(b));
+  }
+
+  return Array.from(map.values());
+}
+// ---------- end helpers ----------
+
 export default function ProductListPage() {
   // e.g. /product?category=jar
   const { category } = useLocalSearchParams<{ category?: string }>();
@@ -159,11 +428,12 @@ export default function ProductListPage() {
   const dbValue = CATEGORY_TO_DB[activeCategory]; // undefined if no/unknown category
   const isFiltered = Boolean(dbValue);
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [rows, setRows] = useState<Product[]>([]);
   const [page, setPage] = useState<number>(1);
   const basePageSize = 9;
-  // When filtering client-side, fetch a bigger chunk so we can filter in memory
-  const effectivePageSize = isFiltered ? 200 : basePageSize;
+
+  // When we’re not collapsing, 9/page is fine. But we will collapse groups, so fetch more.
+  const effectivePageSize = isFiltered ? 200 : 200;
 
   const [total, setTotal] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
@@ -184,7 +454,6 @@ export default function ProductListPage() {
     (screenWidth - horizontalPadding - gapBetween * (columns - 1)) / columns
   );
 
-  // reset to page 1 when the category changes
   useEffect(() => {
     setPage(1);
   }, [dbValue]);
@@ -192,19 +461,26 @@ export default function ProductListPage() {
   async function load() {
     setLoading(true);
     try {
-      const { products: rows, total: count } = await getProducts({
+      const { products: res, total: count } = await getProducts({
         page,
         pageSize: effectivePageSize,
         orderBy: { column: "created_at", ascending: false },
       });
 
-      // ✅ filter using DB column product_type
-      const filtered = isFiltered
-        ? rows.filter((p: any) => p.product_type === dbValue)
-        : rows;
+      const filtered = dbValue ? res.filter((p: any) => p.product_type === dbValue) : res;
 
-      setProducts(filtered);
-      setTotal(isFiltered ? filtered.length : count);
+      // collapse siblings → families
+      const families = buildFamilies(filtered);
+
+      // sort families by created_at of rep if you like, else by name
+      families.sort((a, b) => a.baseName.localeCompare(b.baseName));
+
+      setRows(
+        // store only representatives; we’ll still keep family info in a memo below
+        families.map((f) => f.rep)
+      );
+      setTotal(families.length);
+      setFamilyCache(families);
     } catch (err) {
       console.error("Failed to load products", err);
     } finally {
@@ -212,10 +488,20 @@ export default function ProductListPage() {
     }
   }
 
+  // keep a local cache of families for “X colors” and price range display
+  const [familyCache, setFamilyCache] = useState<Family[]>([]);
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, dbValue]);
+
+  // Make a quick lookup from rep.id → family
+  const repsById = useMemo(() => {
+    const m = new Map<string, Family>();
+    for (const f of familyCache) m.set(f.rep.id, f);
+    return m;
+  }, [familyCache]);
 
   const totalPages = Math.max(1, Math.ceil(total / basePageSize));
   const heading =
@@ -232,65 +518,82 @@ export default function ProductListPage() {
     );
   }
 
+  // paginate representatives (families) on the client
+  const start = (page - 1) * basePageSize;
+  const reps = rows.slice(start, start + basePageSize);
+
   return (
     <ScrollView contentContainerStyle={styles.root}>
       <Text style={styles.shopHeading}>{heading}</Text>
 
       <View style={styles.gridColWrapper}>
-        {products.map((p) => (
-          <View key={p.id} style={[{ width: columnWidth, padding: 6 }]}>
-            <Link href={`/product/${p.id}`} asChild>
-              <Pressable style={styles.productCard}>
-                <Image
-                  source={
-                    p.image_urls?.[0]?.url
-                      ? { uri: p.image_urls[0].url }
-                      : require("../../assets/images/logo.png")
-                  }
-                  style={[
-                    styles.productImage,
-                    screenWidth <= 420 ? { height: 140 } : { height: 180 },
-                  ]}
-                />
-                <View style={styles.productInfo}>
-                  <Text style={styles.productTitle} numberOfLines={2} ellipsizeMode="tail">
-                    {p.name}
-                  </Text>
-                  <Text style={styles.productPrice}>
-                    ₹{((p.price_cents ?? 0) / 100).toFixed(2)}
-                  </Text>
-                </View>
-              </Pressable>
-            </Link>
-          </View>
-        ))}
+        {reps.map((p) => {
+          const fam = repsById.get(p.id);
+          const colorsLabel =
+            fam && fam.colors.length > 1 ? `• ${fam.colors.length} colors` : "";
+          const priceLabel =
+            fam && fam.minPrice !== fam.maxPrice
+              ? `₹${formatPriceFromCents(fam.minPrice)} – ₹${formatPriceFromCents(fam.maxPrice)}`
+              : `₹${formatPriceFromCents(p.price_cents)}`;
+
+          return (
+            <View key={p.id} style={[{ width: columnWidth, padding: 6 }]}>
+              <Link href={`/product/${p.id}`} asChild>
+                <Pressable style={styles.productCard}>
+                  <Image
+                    source={
+                      p.image_urls?.[0]?.url
+                        ? { uri: p.image_urls[0].url }
+                        : require("../../assets/images/logo.png")
+                    }
+                    style={[
+                      styles.productImage,
+                      screenWidth <= 420 ? { height: 140 } : { height: 180 },
+                    ]}
+                  />
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productTitle} numberOfLines={2} ellipsizeMode="tail">
+                      {/* Clean display name (remove “Colour : X”) */}
+                      {p.name.replace(/\\s*Colour\\s*:\\s*[A-Za-z]+\\s*$/i, "")}
+                    </Text>
+                    {/* small helper line */}
+                    {fam && (
+                      <Text style={{ marginTop: 2, color: "#666", fontSize: 12 }}>
+                        {p.scent ?? ""} {colorsLabel}
+                      </Text>
+                    )}
+                    <Text style={styles.productPrice}>{priceLabel}</Text>
+                  </View>
+                </Pressable>
+              </Link>
+            </View>
+          );
+        })}
       </View>
 
-      {/* Pagination is only meaningful when not filtering on the client */}
-      {!isFiltered && (
-        <View style={styles.pagination}>
-          <Pressable
-            style={styles.pageBtn}
-            onPress={() => setPage((s) => Math.max(1, s - 1))}
-            disabled={page === 1}
-          >
-            <Text>◀</Text>
-          </Pressable>
+      {/* Client-side pagination on grouped reps */}
+      <View style={styles.pagination}>
+        <Pressable
+          style={styles.pageBtn}
+          onPress={() => setPage((s) => Math.max(1, s - 1))}
+          disabled={page === 1}
+        >
+          <Text>◀</Text>
+        </Pressable>
 
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Text style={{ marginHorizontal: 8 }}>{page}</Text>
-            <Text style={{ color: "#666" }}> / {totalPages}</Text>
-          </View>
-
-          <Pressable
-            style={styles.pageBtn}
-            onPress={() => setPage((s) => Math.min(totalPages, s + 1))}
-            disabled={page === totalPages}
-          >
-            <Text>▶</Text>
-          </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text style={{ marginHorizontal: 8 }}>{page}</Text>
+          <Text style={{ color: "#666" }}> / {totalPages}</Text>
         </View>
-      )}
+
+        <Pressable
+          style={styles.pageBtn}
+          onPress={() => setPage((s) => Math.min(totalPages, s + 1))}
+          disabled={page === totalPages}
+        >
+          <Text>▶</Text>
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }
