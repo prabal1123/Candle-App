@@ -134,7 +134,44 @@ productImage: {
   noRelated: {
     fontSize: 14,
     color: "#888",
-  },
+  },  
+
+
+
+  topSection: {
+  flexDirection: Platform.OS === "web" ? "row" : "column",
+  alignItems: "flex-start",
+  gap: 40,
+  width: "100%",
+  maxWidth: 980,
+  alignSelf: "center",
+  marginBottom: 24,
+},
+
+imageColumn: {
+  flex: 1.2,
+},
+
+detailsColumn: {
+  flex: 1,
+},
+
+  productImageLarge: {
+  width: "100%",
+  height: Platform.OS === "web" ? 520 : 360,
+  borderRadius: 20,
+  backgroundColor: "#eee",
+  ...Platform.select({
+    web: { objectFit: "cover" },
+  }),
+},
+
+
+
+
 });
 
 export default productDetailStyles;
+
+
+

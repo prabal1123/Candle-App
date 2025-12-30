@@ -427,10 +427,7 @@ export default function ProductDetail() {
           <Text style={{ fontSize: 20, fontWeight: "700", marginTop: 26, marginBottom: 12 }}>
             Related Products
           </Text>
-          <View
-            style={{flexDirection: "row",flexWrap: "wrap",justifyContent: "space-between",
-            }}>
-
+          <View style={[listStyles.gridColWrapper, { flexDirection: "row", flexWrap: "wrap" }]}>
             {relatedLoading ? (
               <ActivityIndicator />
             ) : related.length === 0 ? (
@@ -438,13 +435,15 @@ export default function ProductDetail() {
             ) : (
               related.map((p) => (
                 <View
-  key={p.id}
-  style={{
-    width: screenWidth < 480 ? "48%" : 240,
-    marginBottom: 16,
-  }}
->
-
+                  key={p.id}
+                  style={[
+                    listStyles.col3,
+                    screenWidth < 480 && relatedCardWidth
+                      ? { width: relatedCardWidth, marginRight: 8 }
+                      : undefined,
+                    { marginBottom: 12 },
+                  ]}
+                >
                   <Link href={`/product/${p.id}`} asChild>
                     <Pressable style={listStyles.productCard}>
                       <Image

@@ -46,19 +46,43 @@ export const productListStyles = StyleSheet.create({
   col4: { width: "23%", padding: 6 },
   col5: { width: "19%", padding: 6 },
 
-  productCard: {
-    borderRadius: 12,
-    backgroundColor: "#fff",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#f0ece9",
-    paddingBottom: 8,
-    ...Platform.select({
-      web: { boxShadow: "0 6px 18px rgba(16,24,40,0.06)" },
-      android: { elevation: 2 },
-      ios: { shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4 },
-    }),
-  },
+  // productCard: {
+  //   borderRadius: 12,
+  //   backgroundColor: "#fff",
+  //   overflow: "hidden",
+  //   borderWidth: 1,
+  //     height: 270, 
+  //   borderColor: "#f0ece9",
+  //   paddingBottom: 8,
+  //   ...Platform.select({
+  //     web: { boxShadow: "0 6px 18px rgba(16,24,40,0.06)" },
+  //     android: { elevation: 2 },
+  //     ios: { shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4 },
+  //   }),
+  // },
+productCard: {
+  borderRadius: 12,
+  backgroundColor: "#fff",
+  overflow: "hidden",
+  borderWidth: 1,
+  borderColor: "#f0ece9",
+  paddingBottom: 8,
+
+  height: 270,
+  justifyContent: "flex-start",
+
+  ...Platform.select({
+    web: {
+      boxShadow: "0 6px 18px rgba(16,24,40,0.06)",
+      transitionProperty: "transform, box-shadow",
+      transitionDuration: "180ms",
+      transitionTimingFunction: "ease",
+    },
+    android: { elevation: 2 },
+    ios: { shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4 },
+  }),
+},
+
 
   // IMPORTANT: web needs a numeric height or aspectRatio — we provide a default numeric height
   // and expose a small override for narrow screens.

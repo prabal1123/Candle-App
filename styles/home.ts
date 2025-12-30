@@ -236,6 +236,27 @@ export const homeStyles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
   },
+
+  cardInner: {
+  flex: 1,
+  borderRadius: 12,
+  overflow: "hidden" as const,
+  backgroundColor: "#ffffff",
+},
+
+cardTextContainer: {
+  position: "absolute" as const,
+  bottom: 0,
+  left: 0,
+  right: 0,
+  padding: 16,
+  backgroundColor: "rgba(255, 255, 255, 0.9)",
+  borderBottomLeftRadius: 12,
+  borderBottomRightRadius: 12,
+},
+
+
+
 });
 
 export default homeStyles;
