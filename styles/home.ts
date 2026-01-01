@@ -172,23 +172,48 @@ export const homeStyles = StyleSheet.create({
 
   /* grid layout */
   columnWrapper: { justifyContent: "space-between" },
+  // card: {
+  //   flex: 1,
+  //   maxWidth: 420,
+  //   borderWidth: 1,
+  //   borderColor: COLORS.border,
+  //   borderRadius: SIZES.borderRadius,
+  //   backgroundColor: COLORS.bg,
+  //   marginHorizontal: 8,
+  //   marginBottom: 18,
+  //   overflow: "hidden",
+  //   ...Platform.select({
+  //     web: { boxShadow: `0 6px 18px ${COLORS.cardShadow}` },
+  //     android: { elevation: 3 },
+  //     ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6 },
+  //   }),
+  //   alignItems: "center",
+  // },
   card: {
-    flex: 1,
-    maxWidth: 420,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SIZES.borderRadius,
-    backgroundColor: COLORS.bg,
-    marginHorizontal: 8,
-    marginBottom: 18,
-    overflow: "hidden",
-    ...Platform.select({
-      web: { boxShadow: `0 6px 18px ${COLORS.cardShadow}` },
-      android: { elevation: 3 },
-      ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6 },
-    }),
-    alignItems: "center",
-  },
+  flex: 1,
+  width: "62%",          // ⬅️ shrink on phone
+  maxWidth: 360,         // ⬅️ prevent oversized cards
+  alignSelf: "center",   // ⬅️ center card
+  borderWidth: 1,
+  borderColor: COLORS.border,
+  borderRadius: SIZES.borderRadius,
+  backgroundColor: COLORS.bg,
+  marginBottom: 22,
+  overflow: "hidden",
+
+  ...Platform.select({
+    web: {
+      width: "100%",     // ⬅️ desktop grid unchanged
+      maxWidth: 420,
+      boxShadow: `0 6px 18px ${COLORS.cardShadow}`,
+    },
+    android: { elevation: 3 },
+    ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6 },
+  }),
+
+  alignItems: "center",
+},
+
   cardImage: {
     width: "100%",
     aspectRatio: 4 / 3,
