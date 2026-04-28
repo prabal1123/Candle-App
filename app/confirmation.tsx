@@ -1,301 +1,14 @@
 // // app/confirmation.tsx
 // import React, { useEffect, useState } from "react";
-// import {
-//   View,
-//   Text,
-//   Pressable,
-//   ScrollView,
-//   ActivityIndicator,
-// } from "react-native";
-// import { useRouter } from "expo-router";
-// import { confirmationStyles as styles } from "@/styles/confirmationStyles";
-
-// /**
-//  * API base resolution (no localhost hard-coding):
-//  * - Use EXPO_PUBLIC_API_BASE if set (e.g. https://candle-app-lac.vercel.app/api)
-//  * - Else same-origin /api in the browser
-//  * - Else fall back to prod URL
-//  */
-// function getApiBase() {
-//   const fromEnv =
-//     (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-//   if (fromEnv) return fromEnv;
-//   if (typeof window !== "undefined") return `${window.location.origin}/api`;
-//   return "https://candle-app-lac.vercel.app/api";
-// }
-// const API_BASE = getApiBase();
-
-// type OrderItem = {
-//   id?: string;
-//   name?: string;
-//   quantity?: number;
-//   unit_price_cents?: number;
-//   line_total_cents?: number;
-//   product_id?: string | null;
-//   qty?: number;
-//   price?: number;
-//   productId?: string | number;
-// };
-
-// type Order = {
-//   id?: string;
-//   order_number?: string;
-//   status?: string;
-//   total_cents?: number;
-//   currency?: string;
-//   customer_name?: string;
-//   created_at?: string;
-//   shipping_address?: string;
-//   amount?: number;
-//   items?: any[];
-//   order_items?: OrderItem[];
-//   phone?: string;
-// };
-
-// function centsToCurrency(cents?: number, currency = "INR") {
-//   const value = (cents ?? 0) / 100;
-//   try {
-//     return new Intl.NumberFormat("en-IN", {
-//       style: "currency",
-//       currency,
-//       minimumFractionDigits: 2,
-//     }).format(value);
-//   } catch {
-//     return `₹${value.toFixed(2)}`;
-//   }
-// }
-
-// export default function ConfirmationScreen() {
-//   const router = useRouter();
-
-//   // read orderId from router params or ?orderId= in web
-//   // @ts-ignore
-//   const orderIdFromParams = (router?.params?.orderId as string) ?? null;
-//   let orderIdFromQuery: string | null = null;
-//   let orderNumberFromQuery: string | null = null;
-//   if (typeof window !== "undefined" && window.location?.search) {
-//     try {
-//       const sp = new URLSearchParams(window.location.search);
-//       orderIdFromQuery = sp.get("orderId") ?? sp.get("order_id") ?? null;
-//       orderNumberFromQuery = sp.get("orderNumber") ?? sp.get("order_number") ?? null;
-//     } catch {}
-//   }
-//   const orderId = orderIdFromParams ?? orderIdFromQuery ?? null;
-//   const orderNumber = orderNumberFromQuery ?? null;
-
-//   const [loading, setLoading] = useState<boolean>(!!(orderId || orderNumber));
-//   const [order, setOrder] = useState<Order | null>(null);
-//   const [error, setError] = useState<string | null>(null);
-
-//   // Helper: try to read lastOrder from sessionStorage (web only)
-//   const readLastOrderFromSession = (): Order | null => {
-//     try {
-//       if (typeof window === "undefined") return null;
-//       const raw = sessionStorage.getItem("lastOrder");
-//       if (!raw) return null;
-//       return JSON.parse(raw) as Order;
-//     } catch (e) {
-//       console.warn("confirmation: failed to read lastOrder from sessionStorage", e);
-//       return null;
-//     }
-//   };
-
-//   useEffect(() => {
-//     let cancelled = false;
-
-//     const load = async () => {
-//       setError(null);
-
-//       // Prefer server fetch if we have an id or order_number
-//       if (orderId || orderNumber) {
-//         setLoading(true);
-//         try {
-//           const qs = orderId
-//             ? `id=${encodeURIComponent(String(orderId))}`
-//             : `order_number=${encodeURIComponent(String(orderNumber))}`;
-
-//           // ✅ call the deployed API under /api/order with query params
-//           const res = await fetch(`${API_BASE}/order?${qs}`, {
-//             headers: { Accept: "application/json" },
-//           });
-//           const json = await res.json().catch(() => null);
-
-//           if (!res.ok || !json?.ok || !json?.order) {
-//             throw new Error(json?.error || `Failed to fetch order (${res.status})`);
-//           }
-
-//           const theOrder: Order = json.order;
-
-//           // Normalize items into order_items for display (if needed)
-//           if (!theOrder.order_items && Array.isArray(theOrder.items)) {
-//             theOrder.order_items = theOrder.items.map((it: any) => ({
-//               id: it.id ?? undefined,
-//               name: it.name ?? it.title ?? it.productName ?? it.product_name ?? "Item",
-//               quantity: it.quantity ?? it.qty ?? 1,
-//               unit_price_cents:
-//                 it.unit_price_cents ??
-//                 (it.price ? Math.round(Number(it.price) * 100) : undefined),
-//               line_total_cents:
-//                 it.line_total_cents ??
-//                 (it.line_total ? Math.round(Number(it.line_total) * 100) : undefined),
-//               product_id: it.product_id ?? it.productId ?? null,
-//             })) as OrderItem[];
-//           }
-
-//           if (!cancelled) {
-//             setOrder(theOrder);
-//             setLoading(false);
-//             // cache to session for quick fallback
-//             try {
-//               if (typeof window !== "undefined") {
-//                 sessionStorage.setItem("lastOrder", JSON.stringify(theOrder));
-//               }
-//             } catch {}
-//           }
-//           return;
-//         } catch (e: any) {
-//           console.warn("Failed to fetch order:", e);
-//           if (!cancelled) setError(e?.message || String(e));
-//           if (!cancelled) setLoading(false);
-//         }
-//       }
-
-//       // Fallback to session if no id in URL or server fetch failed
-//       const cached = readLastOrderFromSession();
-//       if (cached && !cancelled) {
-//         setOrder(cached);
-//         setLoading(false);
-//       }
-//     };
-
-//     load();
-//     return () => {
-//       cancelled = true;
-//     };
-//   }, [orderId, orderNumber]);
-
-//   const handleViewOrders = () => router.push("/account/orders");
-//   const handleContinue = () => router.push("/");
-
-//   return (
-//     <ScrollView contentContainerStyle={styles.container}>
-//       <View style={styles.content}>
-//         <Text style={styles.pageTitle}>Order Confirmed!</Text>
-
-//         {!order ? (
-//           <>
-//             {loading ? (
-//               <View style={{ marginTop: 24 }}>
-//                 <ActivityIndicator />
-//               </View>
-//             ) : (
-//               <>
-//                 <Text style={[styles.lead, { color: "#a00" }]}>
-//                   {error || "No recent order found."}
-//                 </Text>
-//                 <Text style={styles.lead}>
-//                   If you just completed payment, try returning to the checkout or check your order history.
-//                 </Text>
-//                 <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-//                   <Text style={styles.secondaryBtnText}>View Order History</Text>
-//                 </Pressable>
-//                 <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//                   <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//                 </Pressable>
-//               </>
-//             )}
-//           </>
-//         ) : (
-//           <>
-//             <Text style={styles.lead}>
-//               Thanks — your order is confirmed. A confirmation may be emailed to you.
-//             </Text>
-
-//             <Text style={styles.sectionTitle}>Order Summary</Text>
-//             <View style={styles.summary}>
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Order Number</Text>
-//                 <Text style={styles.value}>#{order.order_number ?? order.id}</Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Items</Text>
-//                 <View style={{ maxWidth: "60%" }}>
-//                   {Array.isArray(order.order_items) && order.order_items.length > 0 ? (
-//                     order.order_items.map((it: OrderItem, idx: number) => (
-//                       <Text key={it.id ?? idx} style={styles.value}>
-//                         {it.name ?? "Item"} × {it.quantity ?? 1} —{" "}
-//                         {it.unit_price_cents !== undefined
-//                           ? centsToCurrency(it.unit_price_cents, order.currency)
-//                           : it.price
-//                           ? `₹${Number(it.price).toFixed(2)}`
-//                           : ""}
-//                       </Text>
-//                     ))
-//                   ) : Array.isArray(order.items) && order.items.length > 0 ? (
-//                     order.items.map((it: any, idx: number) => (
-//                       <Text key={idx} style={styles.value}>
-//                         {(it.name ?? it.title ?? "Item")} × {it.quantity ?? it.qty ?? 1} —{" "}
-//                         {it.unit_price_cents !== undefined
-//                           ? centsToCurrency(it.unit_price_cents, order.currency)
-//                           : it.price
-//                           ? `₹${Number(it.price).toFixed(2)}`
-//                           : ""}
-//                       </Text>
-//                     ))
-//                   ) : (
-//                     <Text style={styles.value}>— Details in order history</Text>
-//                   )}
-//                 </View>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Total</Text>
-//                 <Text style={styles.value}>
-//                   {order.total_cents
-//                     ? centsToCurrency(order.total_cents, order.currency)
-//                     : order.amount
-//                     ? `₹${Number(order.amount).toFixed(2)}`
-//                     : "—"}
-//                 </Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Shipping Address</Text>
-//                 <Text style={styles.value}>{order.shipping_address ?? "—"}</Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Status</Text>
-//                 <Text style={styles.value}>{order.status ?? "—"}</Text>
-//               </View>
-//             </View>
-
-//             <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-//               <Text style={styles.secondaryBtnText}>View Order History</Text>
-//             </Pressable>
-//             <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//               <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//             </Pressable>
-//           </>
-//         )}
-//       </View>
-//     </ScrollView>
-//   );
-// }
-
-
-// // app/confirmation.tsx
-// import React, { useEffect, useState } from "react";
 // import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
 // import { useRouter } from "expo-router";
 // import { confirmationStyles as styles } from "@/styles/confirmationStyles";
 
 // function getApiBase() {
 //   const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-//   if (fromEnv) return fromEnv; // e.g. https://candle-app-lac.vercel.app/api
+//   if (fromEnv) return fromEnv;
 //   if (typeof window !== "undefined") return `${window.location.origin}/api`;
-//   return "https://candle-app-lac.vercel.app/api";
+//   return "https://www.thehappycandles.com/api";
 // }
 // const API_BASE = getApiBase();
 
@@ -305,31 +18,27 @@
 //   quantity?: number;
 //   unit_price_cents?: number;
 //   line_total_cents?: number;
-//   product_id?: string | null;
-//   qty?: number;
 //   price?: number;
-//   productId?: string | number;
+//   qty?: number;
 // };
 
 // type Order = {
 //   id?: string;
 //   order_number?: string;
-//   status?: string;
 //   total_cents?: number;
 //   currency?: string;
 //   customer_name?: string;
-//   created_at?: string;
 //   shipping_address?: string;
-//   amount?: number;
 //   items?: any[];
 //   order_items?: OrderItem[];
-//   phone?: string;
+//   status?: string;
+//   amount?: number;
 // };
 
 // function centsToCurrency(cents?: number, currency = "INR") {
 //   const value = (cents ?? 0) / 100;
 //   try {
-//     return new Intl.NumberFormat("en-IN", { style: "currency", currency, minimumFractionDigits: 2 }).format(value);
+//     return new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(value);
 //   } catch {
 //     return `₹${value.toFixed(2)}`;
 //   }
@@ -337,619 +46,308 @@
 
 // export default function ConfirmationScreen() {
 //   const router = useRouter();
-
-//   // read from query (?orderId= & order_number=)
-//   let orderIdFromQuery: string | null = null;
-//   let orderNumberFromQuery: string | null = null;
-//   if (typeof window !== "undefined" && window.location?.search) {
-//     const sp = new URLSearchParams(window.location.search);
-//     orderIdFromQuery = sp.get("orderId") ?? sp.get("order_id");
-//     orderNumberFromQuery = sp.get("order_number") ?? sp.get("orderNumber");
-//   }
-
-//   const orderId = orderIdFromQuery ?? null;
-//   const orderNumber = orderNumberFromQuery ?? null;
-
-//   const [loading, setLoading] = useState<boolean>(!!(orderId || orderNumber));
 //   const [order, setOrder] = useState<Order | null>(null);
+//   const [loading, setLoading] = useState(true);
 //   const [error, setError] = useState<string | null>(null);
 
-//   const readLastOrderFromSession = (): Order | null => {
-//     try {
-//       if (typeof window === "undefined") return null;
-//       const raw = sessionStorage.getItem("lastOrder");
-//       return raw ? (JSON.parse(raw) as Order) : null;
-//     } catch {
-//       return null;
-//     }
-//   };
+//   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+//   const orderId = params.get("orderId");
+//   const orderNumber = params.get("order_number");
 
 //   useEffect(() => {
 //     let cancelled = false;
+//     const loadOrder = async () => {
+//       try {
+//         const cached = typeof window !== "undefined"
+//           ? sessionStorage.getItem("lastOrder")
+//           : null;
+//         if (cached) setOrder(JSON.parse(cached));
 
-//     const load = async () => {
-//       setError(null);
-
-//       if (orderId || orderNumber) {
-//         setLoading(true);
-//         try {
-//           const qs = orderId
-//             ? `id=${encodeURIComponent(String(orderId))}`
-//             : `order_number=${encodeURIComponent(String(orderNumber))}`;
-
-//           const res = await fetch(`${API_BASE}/order?${qs}`, { headers: { Accept: "application/json" } });
-//           const json = await res.json().catch(() => null);
-
-//           if (!res.ok || !json?.ok || !json?.order) {
-//             throw new Error(json?.error || `Failed to fetch order (${res.status})`);
-//           }
-
-//           const theOrder: Order = json.order;
-
-//           if (!theOrder.order_items && Array.isArray(theOrder.items)) {
-//             theOrder.order_items = theOrder.items.map((it: any) => ({
-//               id: it.id ?? undefined,
-//               name: it.name ?? it.title ?? it.productName ?? it.product_name ?? "Item",
-//               quantity: it.quantity ?? it.qty ?? 1,
-//               unit_price_cents:
-//                 it.unit_price_cents ?? (it.price ? Math.round(Number(it.price) * 100) : undefined),
-//               line_total_cents:
-//                 it.line_total_cents ?? (it.line_total ? Math.round(Number(it.line_total) * 100) : undefined),
-//               product_id: it.product_id ?? it.productId ?? null,
-//             })) as OrderItem[];
-//           }
-
-//           if (!cancelled) {
-//             setOrder(theOrder);
-//             setLoading(false);
-//             try {
-//               if (typeof window !== "undefined") sessionStorage.setItem("lastOrder", JSON.stringify(theOrder));
-//             } catch {}
-//           }
+//         if (!orderId && !orderNumber) {
+//           setLoading(false);
 //           return;
-//         } catch (e: any) {
-//           if (!cancelled) {
-//             setError(e?.message || String(e));
-//             setLoading(false);
-//           }
 //         }
-//       }
 
-//       const cached = readLastOrderFromSession();
-//       if (cached && !cancelled) {
-//         setOrder(cached);
-//         setLoading(false);
+//         const qs = orderId
+//           ? `id=${encodeURIComponent(orderId)}`
+//           : `order_number=${encodeURIComponent(orderNumber ?? "")}`;
+//         const res = await fetch(`${API_BASE}/order?${qs}`);
+//         const json = await res.json().catch(() => null);
+
+//         if (res.ok && json?.ok && json?.order && !cancelled) {
+//           setOrder(json.order);
+//           if (typeof window !== "undefined")
+//             sessionStorage.setItem("lastOrder", JSON.stringify(json.order));
+//         } else if (!cached) {
+//           setError("Could not fetch order details.");
+//         }
+//       } catch (err: any) {
+//         if (!cancelled) setError(err.message || String(err));
+//       } finally {
+//         if (!cancelled) setLoading(false);
 //       }
 //     };
-
-//     load();
-//     return () => { cancelled = true; };
+//     loadOrder();
+//     return () => {
+//       cancelled = true;
+//     };
 //   }, [orderId, orderNumber]);
 
-//   const handleViewOrders = () => router.push("/account/orders");
 //   const handleContinue = () => router.push("/");
+//   const handleOrders = () => router.push("/account/orders");
+
+//   if (loading)
+//     return (
+//       <View style={styles.container}>
+//         <ActivityIndicator size="large" color="#F37254" />
+//       </View>
+//     );
+
+//   if (!order)
+//     return (
+//       <View style={styles.container}>
+//         <Text style={styles.pageTitle}>Order Not Found</Text>
+//         {error && <Text style={{ color: "red" }}>{error}</Text>}
+//         <Pressable style={styles.primaryBtn} onPress={handleContinue}>
+//           <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+//         </Pressable>
+//       </View>
+//     );
 
 //   return (
 //     <ScrollView contentContainerStyle={styles.container}>
 //       <View style={styles.content}>
 //         <Text style={styles.pageTitle}>Order Confirmed!</Text>
+//         <Text style={styles.lead}>Thank you for your order 🎉</Text>
 
-//         {!order ? (
-//           <>
-//             {loading ? (
-//               <View style={{ marginTop: 24 }}><ActivityIndicator /></View>
-//             ) : (
-//               <>
-//                 <Text style={[styles.lead, { color: "#a00" }]}>{error || "No recent order found."}</Text>
-//                 <Text style={styles.lead}>If you just completed payment, try returning to the checkout or check your order history.</Text>
-//                 <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-//                   <Text style={styles.secondaryBtnText}>View Order History</Text>
-//                 </Pressable>
-//                 <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//                   <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//                 </Pressable>
-//               </>
-//             )}
-//           </>
-//         ) : (
-//           <>
-//             <Text style={styles.lead}>Thanks — your order is confirmed. A confirmation may be emailed to you.</Text>
-
-//             <Text style={styles.sectionTitle}>Order Summary</Text>
-//             <View style={styles.summary}>
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Order Number</Text>
-//                 <Text style={styles.value}>#{order.order_number ?? order.id}</Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Items</Text>
-//                 <View style={{ maxWidth: "60%" }}>
-//                   {Array.isArray(order.order_items) && order.order_items.length > 0 ? (
-//                     order.order_items.map((it: OrderItem, idx: number) => (
-//                       <Text key={it.id ?? idx} style={styles.value}>
-//                         {it.name ?? "Item"} × {it.quantity ?? 1} —{" "}
-//                         {it.unit_price_cents !== undefined
-//                           ? centsToCurrency(it.unit_price_cents, order.currency)
-//                           : it.price
-//                           ? `₹${Number(it.price).toFixed(2)}`
-//                           : ""}
-//                       </Text>
-//                     ))
-//                   ) : Array.isArray(order.items) && order.items.length > 0 ? (
-//                     order.items.map((it: any, idx: number) => (
-//                       <Text key={idx} style={styles.value}>
-//                         {(it.name ?? it.title ?? "Item")} × {it.quantity ?? it.qty ?? 1} —{" "}
-//                         {it.unit_price_cents !== undefined
-//                           ? centsToCurrency(it.unit_price_cents, order.currency)
-//                           : it.price
-//                           ? `₹${Number(it.price).toFixed(2)}`
-//                           : ""}
-//                       </Text>
-//                     ))
-//                   ) : (
-//                     <Text style={styles.value}>— Details in order history</Text>
-//                   )}
-//                 </View>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Total</Text>
-//                 <Text style={styles.value}>
-//                   {order.total_cents
-//                     ? centsToCurrency(order.total_cents, order.currency)
-//                     : order.amount
-//                     ? `₹${Number(order.amount).toFixed(2)}`
-//                     : "—"}
-//                 </Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Shipping Address</Text>
-//                 <Text style={styles.value}>{order.shipping_address ?? "—"}</Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Status</Text>
-//                 <Text style={styles.value}>{order.status ?? "—"}</Text>
-//               </View>
-//             </View>
-
-//             <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-//               <Text style={styles.secondaryBtnText}>View Order History</Text>
-//             </Pressable>
-//             <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//               <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//             </Pressable>
-//           </>
-//         )}
-//       </View>
-//     </ScrollView>
-//   );
-// }
-
-// // app/confirmation.tsx
-// import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
-// import { View, Text, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
-// import { useRouter, useLocalSearchParams } from "expo-router";
-// import { confirmationStyles as styles } from "@/styles/confirmationStyles";
-
-// function getApiBase() {
-//   const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-//   if (fromEnv) return fromEnv;
-//   if (typeof window !== "undefined") return `${window.location.origin}/api`;
-//   return "https://www.thehappycandles.com//api";
-// }
-// const API_BASE = getApiBase();
-
-// type OrderItem = {
-//   id?: string;
-//   name?: string;
-//   quantity?: number;
-//   unit_price_cents?: number;
-//   line_total_cents?: number;
-//   product_id?: string | null;
-// };
-
-// type Order = {
-//   id?: string;
-//   order_number?: string;
-//   status?: string;
-//   total_cents?: number;
-//   currency?: string;
-//   customer_name?: string;
-//   created_at?: string;
-//   shipping_address?: string;
-//   amount?: number;
-//   items?: OrderItem[];
-//   phone?: string;
-// };
-
-// const isUUID = (s?: string | null) =>
-//   !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s || "");
-
-// function centsToCurrency(cents?: number, currency = "INR") {
-//   const value = (cents ?? 0) / 100;
-//   try {
-//     return new Intl.NumberFormat("en-IN", { style: "currency", currency, minimumFractionDigits: 2 }).format(value);
-//   } catch {
-//     return `₹${value.toFixed(2)}`;
-//   }
-// }
-
-// export default function ConfirmationScreen() {
-//   const router = useRouter();
-//   const params = useLocalSearchParams<{ order_number?: string; orderNumber?: string; id?: string; orderId?: string; order_id?: string }>();
-
-//   const [loading, setLoading] = useState<boolean>(false);
-//   const [order, setOrder] = useState<Order | null>(null);
-//   const [error, setError] = useState<string | null>(null);
-//   const [refreshing, setRefreshing] = useState(false);
-
-//   const [tries, setTries] = useState(0);
-//   const retryTimer = useRef<any>(null);
-
-//   // read from URL
-//   const fromRouterOrderNum = (params.order_number || params.orderNumber) as string | undefined;
-//   const fromRouterId = (params.id || params.orderId || params.order_id) as string | undefined;
-
-//   // web fallback
-//   const { fallbackOrderNum, fallbackId } = useMemo(() => {
-//     if (typeof window === "undefined") return { fallbackOrderNum: undefined, fallbackId: undefined };
-//     const sp = new URLSearchParams(window.location.search);
-//     return {
-//       fallbackOrderNum: sp.get("order_number") || sp.get("orderNumber") || undefined,
-//       fallbackId: sp.get("id") || sp.get("orderId") || sp.get("order_id") || undefined,
-//     };
-//   }, []);
-
-//   const orderNumber = useMemo(() => {
-//     return (
-//       fromRouterOrderNum ||
-//       fallbackOrderNum ||
-//       (fromRouterId && !isUUID(fromRouterId) ? fromRouterId : undefined) ||
-//       (fallbackId && !isUUID(fallbackId) ? fallbackId : undefined)
-//     );
-//   }, [fromRouterOrderNum, fromRouterId, fallbackOrderNum, fallbackId]);
-
-//   const idIfUuid = useMemo(() => {
-//     const candidate = fromRouterId || fallbackId;
-//     return isUUID(candidate) ? candidate! : undefined;
-//   }, [fromRouterId, fallbackId]);
-
-//   const endpoint = useMemo(() => {
-//     if (orderNumber) return `${API_BASE}/order?order_number=${encodeURIComponent(orderNumber)}`;
-//     if (idIfUuid) return `${API_BASE}/order?id=${encodeURIComponent(idIfUuid)}`;
-//     return null;
-//   }, [orderNumber, idIfUuid]);
-
-//   const fetchOrder = useCallback(async () => {
-//     setError(null);
-//     if (!endpoint) {
-//       setError("Missing order reference in URL.");
-//       return;
-//     }
-//     setLoading(true);
-//     try {
-//       const res = await fetch(endpoint, { headers: { Accept: "application/json", "Cache-Control": "no-store" } });
-//       const json = await res.json().catch(() => null);
-
-//       if (!res.ok || !json?.ok || !json?.order) {
-//         const msg =
-//           json?.error ||
-//           (res.status === 404
-//             ? "Order not found. If payment just finished, we’ll retry once."
-//             : `Failed to fetch order (${res.status}).`);
-//         throw new Error(msg);
-//       }
-
-//       const theOrder: Order = json.order;
-
-//       if (Array.isArray(theOrder.items)) {
-//         theOrder.items = theOrder.items.map((it: any, idx: number) => ({
-//           id: it.id ?? String(idx),
-//           name: it.name ?? it.title ?? it.productName ?? it.product_name ?? "Item",
-//           quantity: Number(it.quantity ?? it.qty ?? 1),
-//           unit_price_cents: Number(it.unit_price_cents ?? (it.price != null ? Math.round(Number(it.price) * 100) : 0)),
-//           line_total_cents: Number(
-//             it.line_total_cents ?? (it.line_total != null ? Math.round(Number(it.line_total) * 100) : NaN)
-//           ),
-//           product_id: it.product_id ?? it.productId ?? null,
-//         }));
-//       } else {
-//         theOrder.items = [];
-//       }
-
-//       setOrder(theOrder);
-//     } catch (e: any) {
-//       setOrder(null);
-//       setError(e?.message || "Something went wrong while loading your order.");
-//     } finally {
-//       setLoading(false);
-//     }
-//   }, [endpoint]);
-
-//   // 🚫 No auth gate here — confirmation must work even if auth is still hydrating
-//   useEffect(() => {
-//     fetchOrder();
-//     return () => { if (retryTimer.current) clearTimeout(retryTimer.current); };
-//   }, [fetchOrder]);
-
-//   // Quick auto-retry once if we didn't get the order yet (helps with slow backend write)
-//   useEffect(() => {
-//     if (!order && endpoint && tries === 0) {
-//       retryTimer.current = setTimeout(() => {
-//         setTries(1);
-//         fetchOrder();
-//       }, 2500);
-//     }
-//   }, [order, endpoint, tries, fetchOrder]);
-
-//   const onRefresh = useCallback(async () => {
-//     setRefreshing(true);
-//     await fetchOrder();
-//     setRefreshing(false);
-//   }, [fetchOrder]);
-
-//   const handleViewOrders = () => router.push("/account/orders");
-//   const handleContinue = () => router.push("/");
-
-//   return (
-//     <ScrollView
-//       contentContainerStyle={styles.container}
-//       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-//     >
-//       <View style={styles.content}>
-//         <Text style={styles.pageTitle}>Order {order ? "Confirmed!" : "Processing…"}</Text>
-
-//         {loading && (
-//           <View style={{ marginTop: 24 }}>
-//             <ActivityIndicator />
+//         <View style={styles.summary}>
+//           <View style={styles.summaryRow}>
+//             <Text style={styles.muted}>Order #</Text>
+//             <Text style={styles.value}>{order.order_number ?? order.id}</Text>
 //           </View>
-//         )}
-
-//         {!loading && (!order || error) && (
-//           <>
-//             <Text style={[styles.lead, error ? { color: "#a00" } : null]}>
-//               {order ? "" : (error ?? "We’re finalizing your order. This page will update shortly.")}
+//           <View style={styles.summaryRow}>
+//             <Text style={styles.muted}>Total</Text>
+//             <Text style={styles.value}>
+//               {order.total_cents
+//                 ? centsToCurrency(order.total_cents, order.currency)
+//                 : `₹${order.amount ?? 0}`}
 //             </Text>
-//             <View style={{ height: 12 }} />
-//             <Pressable style={styles.secondaryBtn} onPress={onRefresh}>
-//               <Text style={styles.secondaryBtnText}>Retry</Text>
-//             </Pressable>
-//             <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-//               <Text style={styles.secondaryBtnText}>View Order History</Text>
-//             </Pressable>
-//             <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//               <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//             </Pressable>
-//           </>
-//         )}
+//           </View>
+//           <View style={styles.summaryRow}>
+//             <Text style={styles.muted}>Status</Text>
+//             <Text style={styles.value}>{order.status ?? "Paid"}</Text>
+//           </View>
+//           <View style={styles.summaryRow}>
+//             <Text style={styles.muted}>Shipping Address</Text>
+//             <Text style={styles.value}>{order.shipping_address ?? "—"}</Text>
+//           </View>
+//         </View>
 
-//         {!loading && order && !error && (
-//           <>
-//             <Text style={styles.lead}>Thanks — your order is confirmed.</Text>
-
-//             <Text style={styles.sectionTitle}>Order Summary</Text>
-//             <View style={styles.summary}>
-//               <View className="summaryRow" style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Order Number</Text>
-//                 <Text style={styles.value}>#{order.order_number ?? order.id ?? "N/A"}</Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Items</Text>
-//                 <View style={{ maxWidth: "60%" }}>
-//                   {Array.isArray(order.items) && order.items.length > 0 ? (
-//                     order.items.map((it: OrderItem, idx: number) => (
-//                       <Text key={it.id ?? idx} style={styles.value}>
-//                         {it.name ?? "Item"} × {it.quantity ?? 1} —{" "}
-//                         {it.unit_price_cents !== undefined
-//                           ? centsToCurrency(it.unit_price_cents, order.currency)
-//                           : "N/A"}
-//                       </Text>
-//                     ))
-//                   ) : (
-//                     <Text style={styles.value}>No items found</Text>
-//                   )}
-//                 </View>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Total</Text>
-//                 <Text style={styles.value}>
-//                   {order.total_cents != null
-//                     ? centsToCurrency(order.total_cents, order.currency)
-//                     : order.amount != null
-//                     ? centsToCurrency(order.amount * 100, order.currency)
-//                     : "N/A"}
-//                 </Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Shipping Address</Text>
-//                 <Text style={styles.value}>{order.shipping_address ?? "N/A"}</Text>
-//               </View>
-
-//               <View style={styles.summaryRow}>
-//                 <Text style={styles.muted}>Status</Text>
-//                 <Text style={styles.value}>{order.status ?? "N/A"}</Text>
-//               </View>
-//             </View>
-
-//             <Pressable style={styles.secondaryBtn} onPress={handleViewOrders}>
-//               <Text style={styles.secondaryBtnText}>View Order History</Text>
-//             </Pressable>
-//             <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//               <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//             </Pressable>
-//           </>
-//         )}
+//         <Pressable style={styles.secondaryBtn} onPress={handleOrders}>
+//           <Text style={styles.secondaryBtnText}>View Orders</Text>
+//         </Pressable>
+//         <Pressable style={styles.primaryBtn} onPress={handleContinue}>
+//           <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+//         </Pressable>
 //       </View>
 //     </ScrollView>
 //   );
 // }
 
-
-
-
-
-
-
-
-
-// app/confirmation.tsx
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
-import { confirmationStyles as styles } from "@/styles/confirmationStyles";
-
-function getApiBase() {
-  const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
-  if (typeof window !== "undefined") return `${window.location.origin}/api`;
-  return "https://www.thehappycandles.com/api";
-}
-const API_BASE = getApiBase();
-
-type OrderItem = {
-  id?: string;
-  name?: string;
-  quantity?: number;
-  unit_price_cents?: number;
-  line_total_cents?: number;
-  price?: number;
-  qty?: number;
-};
-
-type Order = {
-  id?: string;
-  order_number?: string;
-  total_cents?: number;
-  currency?: string;
-  customer_name?: string;
-  shipping_address?: string;
-  items?: any[];
-  order_items?: OrderItem[];
-  status?: string;
-  amount?: number;
-};
-
-function centsToCurrency(cents?: number, currency = "INR") {
-  const value = (cents ?? 0) / 100;
-  try {
-    return new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(value);
-  } catch {
-    return `₹${value.toFixed(2)}`;
-  }
-}
+import { 
+  View, 
+  Text, 
+  Pressable, 
+  ScrollView, 
+  ActivityIndicator, 
+  StyleSheet, 
+  SafeAreaView,
+  Platform 
+} from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { supabase } from "@/lib/supabase";
 
 export default function ConfirmationScreen() {
   const router = useRouter();
-  const [order, setOrder] = useState<Order | null>(null);
+  const { orderId } = useLocalSearchParams();
+  
+  const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const orderId = params.get("orderId");
-  const orderNumber = params.get("order_number");
 
   useEffect(() => {
-    let cancelled = false;
-    const loadOrder = async () => {
-      try {
-        const cached = typeof window !== "undefined"
-          ? sessionStorage.getItem("lastOrder")
-          : null;
-        if (cached) setOrder(JSON.parse(cached));
+    if (orderId) {
+      fetchOrderDetails();
+    } else {
+      setLoading(false);
+    }
+  }, [orderId]);
 
-        if (!orderId && !orderNumber) {
-          setLoading(false);
-          return;
-        }
+  const fetchOrderDetails = async () => {
+    setLoading(true);
+    try {
+      // Direct fetch from orders table (items is a JSONB column)
+      const { data, error } = await supabase
+        .from("orders")
+        .select(`*`)
+        .eq("id", orderId)
+        .single();
 
-        const qs = orderId
-          ? `id=${encodeURIComponent(orderId)}`
-          : `order_number=${encodeURIComponent(orderNumber ?? "")}`;
-        const res = await fetch(`${API_BASE}/order?${qs}`);
-        const json = await res.json().catch(() => null);
+      if (error) throw error;
+      setOrder(data);
+    } catch (err: any) {
+      console.error("Fetch error:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        if (res.ok && json?.ok && json?.order && !cancelled) {
-          setOrder(json.order);
-          if (typeof window !== "undefined")
-            sessionStorage.setItem("lastOrder", JSON.stringify(json.order));
-        } else if (!cached) {
-          setError("Could not fetch order details.");
-        }
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || String(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    loadOrder();
-    return () => {
-      cancelled = true;
-    };
-  }, [orderId, orderNumber]);
+  const formatPrice = (cents: number) => 
+    `₹${(cents / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
-  const handleContinue = () => router.push("/");
-  const handleOrders = () => router.push("/account/orders");
-
-  if (loading)
+  if (loading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#F37254" />
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#1a1a1a" />
       </View>
     );
+  }
 
-  if (!order)
+  if (!order) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.pageTitle}>Order Not Found</Text>
-        {error && <Text style={{ color: "red" }}>{error}</Text>}
-        <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-          <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+      <View style={styles.center}>
+        <Text style={styles.errorTitle}>Order Summary Not Found</Text>
+        <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
+          <Text style={styles.primaryBtnText}>Return to Shop</Text>
         </Pressable>
       </View>
     );
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.pageTitle}>Order Confirmed!</Text>
-        <Text style={styles.lead}>Thank you for your order 🎉</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        
+        {/* Success Header */}
+        <View style={styles.header}>
+          <View style={styles.iconCircle}>
+            <Text style={{ fontSize: 32 }}>✨</Text>
+          </View>
+          <Text style={styles.pageTitle}>Order Confirmed!</Text>
+          <Text style={styles.subtitle}>Thank you for choosing Happy Candles. Your order is being prepared with care.</Text>
+        </View>
 
-        <View style={styles.summary}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.muted}>Order #</Text>
-            <Text style={styles.value}>{order.order_number ?? order.id}</Text>
+        {/* Luxe Receipt Card */}
+        <View style={styles.receiptCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.receiptLabel}>Transaction Receipt</Text>
+            <Text style={styles.orderNo}>#{order.order_number || order.id.slice(0, 8)}</Text>
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.muted}>Total</Text>
-            <Text style={styles.value}>
-              {order.total_cents
-                ? centsToCurrency(order.total_cents, order.currency)
-                : `₹${order.amount ?? 0}`}
-            </Text>
+          
+          <View style={styles.divider} />
+
+          {/* Mapping through JSONB Items */}
+          <View style={styles.itemsList}>
+            {order.items && Array.isArray(order.items) ? (
+              order.items.map((item: any, index: number) => (
+                <View key={item.id || index} style={styles.itemRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemName}>{item.name || "Happy Candle"}</Text>
+                    <Text style={styles.itemQty}>Quantity: {item.quantity || item.qty || 1}</Text>
+                  </View>
+                  <Text style={styles.itemPrice}>
+                    {/* Fallback math if line_total_cents isn't in the JSON */}
+                    {formatPrice(item.line_total_cents || (item.price * (item.quantity || 1)) || 0)}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>Processing item details...</Text>
+            )}
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.muted}>Status</Text>
-            <Text style={styles.value}>{order.status ?? "Paid"}</Text>
+
+          <View style={styles.divider} />
+
+          {/* Grand Total */}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Grand Total</Text>
+            <Text style={styles.totalValue}>{formatPrice(order.total_cents || 0)}</Text>
           </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.muted}>Shipping Address</Text>
-            <Text style={styles.value}>{order.shipping_address ?? "—"}</Text>
+
+          {/* Details Section */}
+          <View style={styles.metaSection}>
+              <Text style={styles.metaRow}>Status: <Text style={styles.metaValue}>{order.status?.toUpperCase()}</Text></Text>
+              {order.customer_name && <Text style={styles.metaRow}>Customer: <Text style={styles.metaValue}>{order.customer_name}</Text></Text>}
+              {order.phone && <Text style={styles.metaRow}>Contact: <Text style={styles.metaValue}>{order.phone}</Text></Text>}
           </View>
         </View>
 
-        <Pressable style={styles.secondaryBtn} onPress={handleOrders}>
-          <Text style={styles.secondaryBtnText}>View Orders</Text>
-        </Pressable>
-        <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-          <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+        {/* Actions */}
+        <View style={styles.footerActions}>
+          <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
+            <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+          </Pressable>
+          <View style={styles.secondaryRow}>
+            <Pressable style={styles.textLink} onPress={() => router.push("/account/profile")}>
+              <Text style={styles.linkText}>View Order History</Text>
+            </Pressable>
+            <Pressable style={styles.textLink} onPress={() => alert("Printing not available in web preview")}>
+              <Text style={styles.linkText}>Save as PDF</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <Text style={styles.supportText}>Need help? Contact support@thehappycandles.com</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: "#FBFBFB" },
+  container: { padding: 24, alignItems: "center", maxWidth: 600, alignSelf: 'center', width: '100%' },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FBFBFB" },
+  header: { alignItems: "center", marginBottom: 35, marginTop: 20 },
+  iconCircle: { 
+    width: 80, height: 80, borderRadius: 40, backgroundColor: "#fff", 
+    justifyContent: "center", alignItems: "center", marginBottom: 20, 
+    elevation: 4, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12 
+  },
+  pageTitle: { fontSize: 28, fontWeight: "800", color: "#1a1a1a", marginBottom: 8 },
+  subtitle: { fontSize: 14, color: "#666", textAlign: "center", paddingHorizontal: 30, lineHeight: 20 },
+  
+  receiptCard: { 
+    backgroundColor: "#fff", width: "100%", borderRadius: 28, padding: 28, 
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 20, elevation: 4, 
+    borderWidth: 1, borderColor: "#F2F2F2" 
+  },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  receiptLabel: { fontSize: 11, fontWeight: "900", color: "#BBB", textTransform: "uppercase", letterSpacing: 1.5 },
+  orderNo: { fontSize: 11, fontWeight: "700", color: "#888" },
+  divider: { height: 1, backgroundColor: "#F7F7F7", marginVertical: 20 },
+  
+  itemsList: { minHeight: 60 },
+  itemRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
+  itemName: { fontSize: 16, fontWeight: "700", color: "#1a1a1a" },
+  itemQty: { fontSize: 12, color: "#999", marginTop: 4, fontWeight: "600" },
+  itemPrice: { fontSize: 16, fontWeight: "700", color: "#1a1a1a" },
+  
+  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  totalLabel: { fontSize: 18, fontWeight: "800", color: "#1a1a1a" },
+  totalValue: { fontSize: 26, fontWeight: "900", color: "#1a1a1a" },
+
+  metaSection: { marginTop: 25, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#FAFAFA' },
+  metaRow: { fontSize: 12, color: '#AAA', marginBottom: 5, fontWeight: '600' },
+  metaValue: { color: '#666', fontWeight: '700' },
+
+  footerActions: { width: "100%", marginTop: 35, gap: 15 },
+  primaryBtn: { backgroundColor: "#1a1a1a", padding: 20, borderRadius: 18, alignItems: "center" },
+  primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  secondaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
+  textLink: { paddingVertical: 5 },
+  linkText: { color: "#888", fontWeight: "700", fontSize: 13 },
+  supportText: { marginTop: 40, fontSize: 11, color: '#CCC', marginBottom: 20 },
+  
+  errorTitle: { fontSize: 20, fontWeight: "800", color: '#333', marginBottom: 20 },
+  emptyText: { color: '#DDD', fontStyle: 'italic', textAlign: 'center' }
+});

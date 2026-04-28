@@ -1,14 +1,13 @@
-// // components/VariantSelector.tsx
-// import React, { useMemo, useState } from "react";
-// import { View, Text, Pressable, Modal, FlatList, StyleSheet } from "react-native";
+
+// import React, { useMemo, useState, useEffect } from "react";
+// import { View, Text, Pressable, StyleSheet } from "react-native";
 
 // export type Variant = {
-//   id: string; // unique per variant (e.g., SKU)
-//   fragrance: string; // e.g., "Lavender"
-//   color: string; // e.g., "Purple"
+//   id: string;
+//   fragrance: string;
+//   color: string;
 //   price: number;
-//   stock: number; // 0 means out of stock
-//   imageUrl?: string;
+//   stock: number;
 // };
 
 // export type VariantSelectorValue = {
@@ -27,39 +26,30 @@
 //   );
 
 //   const colorsForFragrance = useMemo(() => {
-//     if (!selectedFragrance) return [] as string[];
+//     if (!selectedFragrance) return [];
 //     return Array.from(
-//       new Set(
-//         variants
-//           .filter(v => v.fragrance === selectedFragrance)
-//           .map(v => v.color)
-//       )
+//       new Set(variants.filter(v => v.fragrance === selectedFragrance).map(v => v.color))
 //     );
 //   }, [variants, selectedFragrance]);
 
-//   const selectedVariant: Variant | null = useMemo(() => {
+//   const selectedVariant = useMemo(() => {
 //     if (!selectedFragrance || !selectedColor) return null;
 //     return (
-//       variants.find(
-//         v => v.fragrance === selectedFragrance && v.color === selectedColor
-//       ) || null
+//       variants.find(v => v.fragrance === selectedFragrance && v.color === selectedColor) || null
 //     );
 //   }, [variants, selectedFragrance, selectedColor]);
 
-//   // auto-select sensible defaults
-//   React.useEffect(() => {
-//     if (!selectedFragrance && fragrances.length > 0) {
+//   useEffect(() => {
+//     if (!selectedFragrance && fragrances.length) {
 //       setSelectedFragrance(fragrances[0]);
 //     }
-//   }, [fragrances, selectedFragrance]);
+//   }, [fragrances]);
 
-//   React.useEffect(() => {
-//     if (selectedFragrance && colorsForFragrance.length > 0) {
+//   useEffect(() => {
+//     if (selectedFragrance && colorsForFragrance.length) {
 //       if (!selectedColor || !colorsForFragrance.includes(selectedColor)) {
 //         setSelectedColor(colorsForFragrance[0]);
 //       }
-//     } else {
-//       setSelectedColor(null);
 //     }
 //   }, [selectedFragrance, colorsForFragrance]);
 
@@ -74,58 +64,10 @@
 //   } as const;
 // }
 
-// // Simple dropdown using Modal (no external deps)
-// type DropdownProps = {
-//   label: string;
-//   value: string | null;
-//   options: string[];
-//   onChange: (val: string) => void;
-//   disabled?: boolean;
-// };
-
-// const Dropdown: React.FC<DropdownProps> = ({ label, value, options, onChange, disabled }) => {
-//   const [open, setOpen] = useState(false);
-
-//   return (
-//     <View style={styles.dropdownWrap}>
-//       <Text style={styles.label}>{label}</Text>
-//       <Pressable
-//         accessibilityRole="button"
-//         disabled={disabled}
-//         style={[styles.trigger, disabled && styles.disabled]}
-//         onPress={() => setOpen(true)}
-//       >
-//         <Text style={styles.valueText}>{value ?? `Select ${label.toLowerCase()}`}</Text>
-//       </Pressable>
-
-//       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-//         <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-//         <View style={styles.sheet}>
-//           <Text style={styles.sheetTitle}>{label}</Text>
-//           <FlatList
-//             data={options}
-//             keyExtractor={(item) => item}
-//             renderItem={({ item }) => (
-//               <Pressable
-//                 style={styles.option}
-//                 onPress={() => {
-//                   onChange(item);
-//                   setOpen(false);
-//                 }}
-//               >
-//                 <Text style={styles.optionText}>{item}</Text>
-//               </Pressable>
-//             )}
-//             ListEmptyComponent={<Text style={styles.empty}>No options</Text>}
-//           />
-//         </View>
-//       </Modal>
-//     </View>
-//   );
-// };
-
-// export const VariantSelector: React.FC<{ variants: Variant[]; onChange?: (v: VariantSelectorValue) => void; }>
-// = ({ variants, onChange }) => {
+// export const VariantSelector: React.FC<{
+//   variants: Variant[];
+//   onChange?: (v: VariantSelectorValue) => void;
+// }> = ({ variants, onChange }) => {
 //   const {
 //     fragrances,
 //     colorsForFragrance,
@@ -136,7 +78,7 @@
 //     selectedVariant,
 //   } = useVariantSelection(variants);
 
-//   React.useEffect(() => {
+//   useEffect(() => {
 //     onChange?.({
 //       fragrance: selectedFragrance,
 //       color: selectedColor,
@@ -146,27 +88,60 @@
 
 //   return (
 //     <View style={styles.container}>
-//       <Dropdown
-//         label="Fragrance"
-//         value={selectedFragrance}
-//         options={fragrances}
-//         onChange={setSelectedFragrance}
-//       />
-//       <Dropdown
-//         label="Color"
-//         value={selectedColor}
-//         options={colorsForFragrance}
-//         onChange={setSelectedColor}
-//         disabled={!selectedFragrance}
-//       />
+//       {/* Fragrance */}
+//       <Text style={styles.label}>Fragrance</Text>
+//       <View style={styles.row}>
+//         {fragrances.map((f) => (
+//           <Pressable
+//             key={f}
+//             style={[
+//               styles.pill,
+//               selectedFragrance === f && styles.pillActive,
+//             ]}
+//             onPress={() => setSelectedFragrance(f)}
+//           >
+//             <Text
+//               style={[
+//                 styles.pillText,
+//                 selectedFragrance === f && styles.pillTextActive,
+//               ]}
+//             >
+//               {f}
+//             </Text>
+//           </Pressable>
+//         ))}
+//       </View>
+
+//       {/* Color */}
+//       <Text style={styles.label}>Color</Text>
+//       <View style={styles.row}>
+//         {colorsForFragrance.map((c) => (
+//           <Pressable
+//             key={c}
+//             style={[
+//               styles.card,
+//               selectedColor === c && styles.cardActive,
+//             ]}
+//             onPress={() => setSelectedColor(c)}
+//           >
+//             <Text
+//               style={[
+//                 styles.cardText,
+//                 selectedColor === c && styles.cardTextActive,
+//               ]}
+//             >
+//               {c}
+//             </Text>
+//           </Pressable>
+//         ))}
+//       </View>
 
 //       {selectedVariant && (
-//         <View style={styles.meta}>
-//           <Text style={styles.metaText}>Price: ₹{selectedVariant.price.toFixed(2)}</Text>
-//           <Text style={styles.metaText}>
-//             {selectedVariant.stock > 0 ? `In stock: ${selectedVariant.stock}` : "Out of stock"}
-//           </Text>
-//         </View>
+//         <Text style={styles.meta}>
+//           {selectedVariant.stock > 0
+//             ? `In stock: ${selectedVariant.stock}`
+//             : "Out of stock"}
+//         </Text>
 //       )}
 //     </View>
 //   );
@@ -174,36 +149,74 @@
 
 // const styles = StyleSheet.create({
 //   container: { gap: 12 },
-//   dropdownWrap: { marginBottom: 12 },
-//   label: { fontSize: 14, opacity: 0.8, marginBottom: 6 },
-//   trigger: {
-//     borderWidth: 1,
-//     borderColor: "#ddd",
-//     paddingVertical: 12,
+
+//   label: {
+//     fontSize: 14,
+//     fontWeight: "600",
+//   },
+
+//   row: {
+//     flexDirection: "row",
+//     flexWrap: "wrap",
+//     gap: 8,
+//   },
+
+//   pill: {
+//     paddingVertical: 8,
 //     paddingHorizontal: 14,
+//     borderRadius: 999,
+//     borderWidth: 1,
+//     borderColor: "#E5E7EB",
+//     backgroundColor: "#fff",
+//   },
+
+//   pillActive: {
+//     borderColor: "#111827",
+//     backgroundColor: "#111827",
+//   },
+
+//   pillText: {
+//     fontSize: 14,
+//     color: "#111827",
+//   },
+
+//   pillTextActive: {
+//     color: "#fff",
+//     fontWeight: "600",
+//   },
+
+//   card: {
+//     minWidth: 72,
+//     paddingVertical: 12,
+//     paddingHorizontal: 12,
 //     borderRadius: 12,
+//     borderWidth: 1,
+//     borderColor: "#E5E7EB",
+//     alignItems: "center",
+//     backgroundColor: "#fff",
 //   },
-//   disabled: { opacity: 0.5 },
-//   valueText: { fontSize: 16 },
-//   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)" },
-//   sheet: {
-//     position: "absolute",
-//     left: 16,
-//     right: 16,
-//     top: "30%",
-//     maxHeight: "60%",
-//     backgroundColor: "white",
-//     borderRadius: 16,
-//     padding: 16,
-//     elevation: 6,
+
+//   cardActive: {
+//     borderColor: "#111827",
+//     backgroundColor: "#F9FAFB",
 //   },
-//   sheetTitle: { fontSize: 16, fontWeight: "600", marginBottom: 8 },
-//   option: { paddingVertical: 12 },
-//   optionText: { fontSize: 16 },
-//   empty: { textAlign: "center", paddingVertical: 12, opacity: 0.6 },
-//   meta: { marginTop: 8 },
-//   metaText: { fontSize: 14 },
+
+//   cardText: {
+//     fontSize: 14,
+//     color: "#111827",
+//   },
+
+//   cardTextActive: {
+//     fontWeight: "600",
+//   },
+
+//   meta: {
+//     marginTop: 4,
+//     fontSize: 13,
+//     color: "#444",
+//   },
 // });
+
 
 
 import React, { useMemo, useState, useEffect } from "react";
@@ -213,6 +226,7 @@ export type Variant = {
   id: string;
   fragrance: string;
   color: string;
+  size?: string | null;
   price: number;
   stock: number;
 };
@@ -220,68 +234,97 @@ export type Variant = {
 export type VariantSelectorValue = {
   fragrance: string | null;
   color: string | null;
+  size?: string | null;
   variant: Variant | null;
 };
+
+interface VariantSelectorProps {
+  variants: Variant[];
+  onChange?: (v: VariantSelectorValue) => void;
+  showSize?: boolean;
+}
 
 export function useVariantSelection(variants: Variant[]) {
   const [selectedFragrance, setSelectedFragrance] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
 
-  const fragrances = useMemo(
-    () => Array.from(new Set(variants.map(v => v.fragrance))),
-    [variants]
+  // 1. Independent Options: Pull all unique choices from the entire product family
+  const fragrances = useMemo(() => 
+    Array.from(new Set(variants.map(v => v.fragrance))), [variants]
   );
 
-  const colorsForFragrance = useMemo(() => {
-    if (!selectedFragrance) return [];
-    return Array.from(
-      new Set(variants.filter(v => v.fragrance === selectedFragrance).map(v => v.color))
-    );
-  }, [variants, selectedFragrance]);
+  const allColors = useMemo(() => 
+    Array.from(new Set(variants.map(v => v.color))), [variants]
+  );
 
+  const allSizes = useMemo(() => 
+    Array.from(new Set(variants.map(v => v.size))).filter(Boolean) as string[], [variants]
+  );
+
+  // 2. The Selection Logic: Find a match for the current combination
   const selectedVariant = useMemo(() => {
-    if (!selectedFragrance || !selectedColor) return null;
-    return (
-      variants.find(v => v.fragrance === selectedFragrance && v.color === selectedColor) || null
-    );
-  }, [variants, selectedFragrance, selectedColor]);
+    return variants.find(v => 
+      v.fragrance === selectedFragrance && 
+      v.color === selectedColor && 
+      (!v.size || v.size === selectedSize)
+    ) || null;
+  }, [variants, selectedFragrance, selectedColor, selectedSize]);
 
+  // 3. Persistent Defaults: Only run once when the component loads
   useEffect(() => {
-    if (!selectedFragrance && fragrances.length) {
-      setSelectedFragrance(fragrances[0]);
+    if (variants.length > 0) {
+      if (!selectedFragrance) setSelectedFragrance(fragrances[0]);
+      if (!selectedColor) setSelectedColor(allColors[0]);
+      if (!selectedSize) setSelectedSize(allSizes[0]);
     }
-  }, [fragrances]);
+  }, [variants]);
 
+  // 4. Persistence Guard: When color/fragrance changes, check if the CURRENT size is still valid.
+  // If the current size (e.g. 200ml) exists in the new color, DO NOTHING.
+  // If it doesn't exist, only then fallback to a size that does exist.
   useEffect(() => {
-    if (selectedFragrance && colorsForFragrance.length) {
-      if (!selectedColor || !colorsForFragrance.includes(selectedColor)) {
-        setSelectedColor(colorsForFragrance[0]);
+    if (selectedColor && selectedFragrance) {
+      const validSizesForThisColor = variants
+        .filter(v => v.fragrance === selectedFragrance && v.color === selectedColor)
+        .map(v => v.size);
+
+      if (selectedSize && !validSizesForThisColor.includes(selectedSize)) {
+        // Only reset if 200ml isn't available in the new color
+        setSelectedSize(validSizesForThisColor[0] || null);
       }
     }
-  }, [selectedFragrance, colorsForFragrance]);
+  }, [selectedColor, selectedFragrance]);
 
   return {
     fragrances,
-    colorsForFragrance,
+    allColors,
+    allSizes,
     selectedFragrance,
     setSelectedFragrance,
     selectedColor,
     setSelectedColor,
+    selectedSize,
+    setSelectedSize,
     selectedVariant,
   } as const;
 }
 
-export const VariantSelector: React.FC<{
-  variants: Variant[];
-  onChange?: (v: VariantSelectorValue) => void;
-}> = ({ variants, onChange }) => {
+export const VariantSelector: React.FC<VariantSelectorProps> = ({ 
+  variants, 
+  onChange, 
+  showSize 
+}) => {
   const {
     fragrances,
-    colorsForFragrance,
+    allColors,
+    allSizes,
     selectedFragrance,
     setSelectedFragrance,
     selectedColor,
     setSelectedColor,
+    selectedSize,
+    setSelectedSize,
     selectedVariant,
   } = useVariantSelection(variants);
 
@@ -289,9 +332,10 @@ export const VariantSelector: React.FC<{
     onChange?.({
       fragrance: selectedFragrance,
       color: selectedColor,
+      size: selectedSize,
       variant: selectedVariant,
     });
-  }, [selectedFragrance, selectedColor, selectedVariant]);
+  }, [selectedFragrance, selectedColor, selectedSize, selectedVariant]);
 
   return (
     <View style={styles.container}>
@@ -301,18 +345,10 @@ export const VariantSelector: React.FC<{
         {fragrances.map((f) => (
           <Pressable
             key={f}
-            style={[
-              styles.pill,
-              selectedFragrance === f && styles.pillActive,
-            ]}
+            style={[styles.pill, selectedFragrance === f && styles.pillActive]}
             onPress={() => setSelectedFragrance(f)}
           >
-            <Text
-              style={[
-                styles.pillText,
-                selectedFragrance === f && styles.pillTextActive,
-              ]}
-            >
+            <Text style={[styles.pillText, selectedFragrance === f && styles.pillTextActive]}>
               {f}
             </Text>
           </Pressable>
@@ -322,104 +358,78 @@ export const VariantSelector: React.FC<{
       {/* Color */}
       <Text style={styles.label}>Color</Text>
       <View style={styles.row}>
-        {colorsForFragrance.map((c) => (
+        {allColors.map((c) => (
           <Pressable
             key={c}
-            style={[
-              styles.card,
-              selectedColor === c && styles.cardActive,
-            ]}
+            style={[styles.card, selectedColor === c && styles.cardActive]}
             onPress={() => setSelectedColor(c)}
           >
-            <Text
-              style={[
-                styles.cardText,
-                selectedColor === c && styles.cardTextActive,
-              ]}
-            >
+            <Text style={[styles.cardText, selectedColor === c && styles.cardTextActive]}>
               {c}
             </Text>
           </Pressable>
         ))}
       </View>
 
+      {/* Size */}
+      {showSize && allSizes.length > 0 && (
+        <>
+          <Text style={styles.label}>Size</Text>
+          <View style={styles.row}>
+            {allSizes.map((s) => (
+              <Pressable
+                key={s}
+                style={[styles.pill, selectedSize === s && styles.pillActive]}
+                onPress={() => setSelectedSize(s)}
+              >
+                <Text style={[styles.pillText, selectedSize === s && styles.pillTextActive]}>
+                  {s}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
+
+      {/* Selection Summary Text */}
+      {(selectedColor || selectedSize) && (
+        <View style={styles.selectionSummary}>
+           <Text style={styles.summaryText}>
+            Now you have selected <Text style={styles.highlight}>{selectedSize || 'Standard'}</Text> with the <Text style={styles.highlight}>{selectedColor}</Text> color
+           </Text>
+        </View>
+      )}
+
       {selectedVariant && (
-        <Text style={styles.meta}>
-          {selectedVariant.stock > 0
-            ? `In stock: ${selectedVariant.stock}`
-            : "Out of stock"}
-        </Text>
+        <View style={styles.stockRow}>
+           <View style={[styles.stockDot, { backgroundColor: selectedVariant.stock > 0 ? '#4ADE80' : '#F87171' }]} />
+           <Text style={styles.meta}>
+            {selectedVariant.stock > 0
+              ? `In stock: ${selectedVariant.stock} units`
+              : "Currently out of stock"}
+          </Text>
+        </View>
       )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { gap: 12 },
-
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-
-  pill: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#fff",
-  },
-
-  pillActive: {
-    borderColor: "#111827",
-    backgroundColor: "#111827",
-  },
-
-  pillText: {
-    fontSize: 14,
-    color: "#111827",
-  },
-
-  pillTextActive: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-
-  card: {
-    minWidth: 72,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
-    backgroundColor: "#fff",
-  },
-
-  cardActive: {
-    borderColor: "#111827",
-    backgroundColor: "#F9FAFB",
-  },
-
-  cardText: {
-    fontSize: 14,
-    color: "#111827",
-  },
-
-  cardTextActive: {
-    fontWeight: "600",
-  },
-
-  meta: {
-    marginTop: 4,
-    fontSize: 13,
-    color: "#444",
-  },
+  container: { gap: 16 },
+  label: { fontSize: 14, fontWeight: "700", color: '#111', textTransform: 'uppercase', letterSpacing: 0.5 },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  pill: { paddingVertical: 10, paddingHorizontal: 18, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#fff" },
+  pillActive: { borderColor: "#111", backgroundColor: "#111" },
+  pillText: { fontSize: 14, color: "#444" },
+  pillTextActive: { color: "#fff", fontWeight: "600" },
+  card: { minWidth: 80, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
+  cardActive: { borderColor: "#111", backgroundColor: "#fff", borderWidth: 2 },
+  cardText: { fontSize: 14, color: "#444" },
+  cardTextActive: { color: "#111", fontWeight: "700" },
+  selectionSummary: { backgroundColor: '#F3F4F6', padding: 12, borderRadius: 8, marginTop: 8, borderLeftWidth: 4, borderLeftColor: '#111' },
+  summaryText: { fontSize: 14, color: '#374151', lineHeight: 20 },
+  highlight: { fontWeight: '800', color: '#000' },
+  stockRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  stockDot: { width: 8, height: 8, borderRadius: 4 },
+  meta: { fontSize: 13, color: "#666" },
 });
