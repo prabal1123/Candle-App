@@ -241,6 +241,7 @@ import { Stack, usePathname, useRouter } from "expo-router";
 import AuthProvider from "@/features/auth/AuthProvider";
 import Header from "@/components/header";
 import * as Linking from "expo-linking";
+import { Analytics } from "@vercel/analytics/react";
 
 const HIDE_HEADER_PATHS: string[] = [];
 
@@ -296,8 +297,10 @@ export default function RootLayout() {
             {showHeader && <Header />}
             <View style={[styles.body, isAuthRoute ? styles.authBody : null]}>
               <Stack screenOptions={{ headerShown: false }} />
-            </View>
+            </View> 
           </View>
+          {/* 3. Add Analytics here - wrap in fragment if needed */}
+          <Analytics />
         </AuthProvider>
       </PersistGate>
     </ReduxProvider>
