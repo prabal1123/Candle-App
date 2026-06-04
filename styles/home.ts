@@ -1,9 +1,6 @@
 // styles/home.ts
 import { StyleSheet, Platform } from "react-native";
 
-/**
- * Theme constants — move to styles/theme.ts if you prefer
- */
 const COLORS = {
   bg: "#fff",
   text: "#111827",
@@ -17,9 +14,10 @@ const COLORS = {
   lightBg: "#f4f2f0",
   primaryTextMuted: "#887563",
 };
+
 const SIZES = {
   maxWidth: 1200,
-  heroHeight: 520, // reduced a bit so hero isn't enormous on desktop
+  heroHeight: 520,
   headerHeight: 64,
   borderRadius: 14,
 };
@@ -27,7 +25,7 @@ const SIZES = {
 export const homeStyles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
 
-  /* Header (positioned absolute in your layout) */
+  /* Header */
   header: {
     position: "absolute",
     top: 0,
@@ -63,25 +61,19 @@ export const homeStyles = StyleSheet.create({
     marginLeft: 10,
   },
 
-  /* Scroll container: add top padding equal to header height to avoid overlap */
+  /* Scroll container */
   container: { paddingTop: SIZES.headerHeight, paddingBottom: 40 },
 
-  /* Hero
-     - Use a fixed height on desktop to make layout predictable.
-     - Keep aspect ratio fallback on mobile.
-  */
+  /* Hero */
   heroFull: {
     width: "100%",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-
     alignSelf: "center",
     maxWidth: SIZES.maxWidth,
     borderRadius: 16,
     paddingHorizontal: 0,
-
-    // Desktop: use a fixed height so the hero doesn't collapse awkwardly
     ...Platform.select({
       web: {
         height: SIZES.heroHeight,
@@ -99,7 +91,7 @@ export const homeStyles = StyleSheet.create({
     resizeMode: "cover",
     ...Platform.select({
       web: {
-        objectPosition: "50% 40%", // shift a bit up for better composition
+        objectPosition: "50% 40%",
       },
     }),
   },
@@ -142,13 +134,9 @@ export const homeStyles = StyleSheet.create({
   },
   ctaText: { color: "#181411", fontWeight: "800" },
 
-  /* Content (cards)
-     - Removed negative marginTop so section sits below hero
-     - Add a small upward overlap (if you want the cards to slightly overlap the hero,
-       set marginTop: -22 instead of 0). For now we keep it below the hero.
-  */
+  /* Content section */
   content: {
-    marginTop: 20, // <-- changed from -60 to 20 so it sits below hero
+    marginTop: 20,
     paddingHorizontal: 28,
     paddingBottom: 28,
     alignSelf: "center",
@@ -172,47 +160,29 @@ export const homeStyles = StyleSheet.create({
 
   /* grid layout */
   columnWrapper: { justifyContent: "space-between" },
-  // card: {
-  //   flex: 1,
-  //   maxWidth: 420,
-  //   borderWidth: 1,
-  //   borderColor: COLORS.border,
-  //   borderRadius: SIZES.borderRadius,
-  //   backgroundColor: COLORS.bg,
-  //   marginHorizontal: 8,
-  //   marginBottom: 18,
-  //   overflow: "hidden",
-  //   ...Platform.select({
-  //     web: { boxShadow: `0 6px 18px ${COLORS.cardShadow}` },
-  //     android: { elevation: 3 },
-  //     ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6 },
-  //   }),
-  //   alignItems: "center",
-  // },
+
+  // ✅ FIXED: removed conflicting width/maxWidth/alignSelf that fought with flex:1
+  // The row container in index.tsx controls layout via flex:1 on each Pressable.
+  // This style now only handles visual appearance (border, radius, shadow, bg).
   card: {
-  flex: 1,
-  width: "62%",          // ⬅️ shrink on phone
-  maxWidth: 360,         // ⬅️ prevent oversized cards
-  alignSelf: "center",   // ⬅️ center card
-  borderWidth: 1,
-  borderColor: COLORS.border,
-  borderRadius: SIZES.borderRadius,
-  backgroundColor: COLORS.bg,
-  marginBottom: 22,
-  overflow: "hidden",
-
-  ...Platform.select({
-    web: {
-      width: "100%",     // ⬅️ desktop grid unchanged
-      maxWidth: 420,
-      boxShadow: `0 6px 18px ${COLORS.cardShadow}`,
-    },
-    android: { elevation: 3 },
-    ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6 },
-  }),
-
-  alignItems: "center",
-},
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.borderRadius,
+    backgroundColor: COLORS.bg,
+    marginBottom: 22,
+    overflow: "hidden",
+    ...Platform.select({
+      web: {
+        boxShadow: `0 6px 18px ${COLORS.cardShadow}`,
+      },
+      android: { elevation: 3 },
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+      },
+    }),
+  },
 
   cardImage: {
     width: "100%",
@@ -224,7 +194,13 @@ export const homeStyles = StyleSheet.create({
       android: { minHeight: 140 },
     }),
   },
-  cardTitle: { marginTop: 12, fontWeight: "700", fontSize: 16 },
+  cardTitle: {
+    marginTop: 12,
+    fontWeight: "700",
+    fontSize: 16,
+    paddingHorizontal: 12,
+    textAlign: "center",
+  },
   cardDesc: {
     marginTop: 6,
     color: COLORS.primaryTextMuted,
@@ -263,25 +239,23 @@ export const homeStyles = StyleSheet.create({
   },
 
   cardInner: {
-  flex: 1,
-  borderRadius: 12,
-  overflow: "hidden" as const,
-  backgroundColor: "#ffffff",
-},
-
-cardTextContainer: {
-  position: "absolute" as const,
-  bottom: 0,
-  left: 0,
-  right: 0,
-  padding: 16,
-  backgroundColor: "rgba(255, 255, 255, 0.9)",
-  borderBottomLeftRadius: 12,
-  borderBottomRightRadius: 12,
-},
-
-
-
+    flex: 1,
+    borderRadius: 12,
+    overflow: "hidden" as const,
+    backgroundColor: "#ffffff",
+  },
+  cardTextContainer: {
+    position: "absolute" as const,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderBottomLeftRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomRightRadius: 12,
+  },
 });
 
 export default homeStyles;

@@ -46,7 +46,13 @@ export type GetProductsOpts = {
  * Returns { products, total } where total is the full count matching filters.
  */
 export async function getProducts(opts: GetProductsOpts = {}) {
-  const { page = 1, pageSize = 9, filters = {}, orderBy = { column: "created_at", ascending: false } } = opts;
+  const { 
+    page = 1, 
+    pageSize = 9, 
+    filters = {}, 
+    orderBy = { column: "created_at", ascending: false } 
+  } = opts;
+  
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -67,14 +73,32 @@ export async function getProducts(opts: GetProductsOpts = {}) {
   applyEqOrIn("scent", filters.scent);
   applyEqOrIn("size", filters.size);
 
-  if (typeof filters.priceMinCents === "number") query = query.gte("price_cents", filters.priceMinCents);
-  if (typeof filters.priceMaxCents === "number" && isFinite(filters.priceMaxCents)) query = query.lte("price_cents", filters.priceMaxCents);
+  if (typeof filters.priceMinCents === "number") {
+    query = query.gte("price_cents", filters.priceMinCents);
+  }
+  if (typeof filters.priceMaxCents === "number" && isFinite(filters.priceMaxCents)) {
+    query = query.lte("price_cents", filters.priceMaxCents);
+  }
 
   query = query.order(orderBy.column, { ascending: !!orderBy.ascending });
 
   const { data, error, count } = await query.range(from, to);
 
   if (error) {
+    // Gracefully handle PostgREST 416 Range Not Satisfiable errors.
+    // This happens when requesting a higher chunk/page limit than total items available.
+    if (
+      error.code === "PGRST103" || 
+      error.status === 416 || 
+      error.message?.includes("satisfiable")
+    ) {
+      console.log("getProducts: Requested range is out of bounds. Safely returning empty array.");
+      return {
+        products: [],
+        total: count ?? 0,
+      };
+    }
+
     console.error("getProducts error:", error);
     throw error;
   }
