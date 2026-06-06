@@ -1,224 +1,305 @@
-// // app/confirmation.tsx
 // import React, { useEffect, useState } from "react";
-// import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
-// import { useRouter } from "expo-router";
-// import { confirmationStyles as styles } from "@/styles/confirmationStyles";
-
-// function getApiBase() {
-//   const fromEnv = (process.env.EXPO_PUBLIC_API_BASE as string | undefined)?.replace(/\/$/, "");
-//   if (fromEnv) return fromEnv;
-//   if (typeof window !== "undefined") return `${window.location.origin}/api`;
-//   return "https://www.thehappycandles.com/api";
-// }
-// const API_BASE = getApiBase();
-
-// type OrderItem = {
-//   id?: string;
-//   name?: string;
-//   quantity?: number;
-//   unit_price_cents?: number;
-//   line_total_cents?: number;
-//   price?: number;
-//   qty?: number;
-// };
-
-// type Order = {
-//   id?: string;
-//   order_number?: string;
-//   total_cents?: number;
-//   currency?: string;
-//   customer_name?: string;
-//   shipping_address?: string;
-//   items?: any[];
-//   order_items?: OrderItem[];
-//   status?: string;
-//   amount?: number;
-// };
-
-// function centsToCurrency(cents?: number, currency = "INR") {
-//   const value = (cents ?? 0) / 100;
-//   try {
-//     return new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(value);
-//   } catch {
-//     return `₹${value.toFixed(2)}`;
-//   }
-// }
+// import { 
+//   View, 
+//   Text, 
+//   Pressable, 
+//   ScrollView, 
+//   ActivityIndicator, 
+//   StyleSheet, 
+//   SafeAreaView,
+//   Platform 
+// } from "react-native";
+// import { useRouter, useLocalSearchParams } from "expo-router";
+// import { supabase } from "@/lib/supabase";
 
 // export default function ConfirmationScreen() {
 //   const router = useRouter();
-//   const [order, setOrder] = useState<Order | null>(null);
+//   const { orderId } = useLocalSearchParams();
+  
+//   const [order, setOrder] = useState<any>(null);
 //   const [loading, setLoading] = useState(true);
-//   const [error, setError] = useState<string | null>(null);
-
-//   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-//   const orderId = params.get("orderId");
-//   const orderNumber = params.get("order_number");
 
 //   useEffect(() => {
-//     let cancelled = false;
-//     const loadOrder = async () => {
-//       try {
-//         const cached = typeof window !== "undefined"
-//           ? sessionStorage.getItem("lastOrder")
-//           : null;
-//         if (cached) setOrder(JSON.parse(cached));
+//     if (orderId) {
+//       fetchOrderDetails();
+//     } else {
+//       setLoading(false);
+//     }
+//   }, [orderId]);
 
-//         if (!orderId && !orderNumber) {
-//           setLoading(false);
-//           return;
-//         }
+//   const fetchOrderDetails = async () => {
+//     setLoading(true);
+//     try {
+//       // Direct fetch from orders table (items is a JSONB column)
+//       const { data, error } = await supabase
+//         .from("orders")
+//         .select(`*`)
+//         .eq("id", orderId)
+//         .single();
 
-//         const qs = orderId
-//           ? `id=${encodeURIComponent(orderId)}`
-//           : `order_number=${encodeURIComponent(orderNumber ?? "")}`;
-//         const res = await fetch(`${API_BASE}/order?${qs}`);
-//         const json = await res.json().catch(() => null);
+//       if (error) throw error;
+//       setOrder(data);
+//     } catch (err: any) {
+//       console.error("Fetch error:", err.message);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
 
-//         if (res.ok && json?.ok && json?.order && !cancelled) {
-//           setOrder(json.order);
-//           if (typeof window !== "undefined")
-//             sessionStorage.setItem("lastOrder", JSON.stringify(json.order));
-//         } else if (!cached) {
-//           setError("Could not fetch order details.");
-//         }
-//       } catch (err: any) {
-//         if (!cancelled) setError(err.message || String(err));
-//       } finally {
-//         if (!cancelled) setLoading(false);
-//       }
-//     };
-//     loadOrder();
-//     return () => {
-//       cancelled = true;
-//     };
-//   }, [orderId, orderNumber]);
+//   const formatPrice = (cents: number) => 
+//     `₹${(cents / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
-//   const handleContinue = () => router.push("/");
-//   const handleOrders = () => router.push("/account/orders");
-
-//   if (loading)
+//   if (loading) {
 //     return (
-//       <View style={styles.container}>
-//         <ActivityIndicator size="large" color="#F37254" />
+//       <View style={styles.center}>
+//         <ActivityIndicator size="large" color="#1a1a1a" />
 //       </View>
 //     );
+//   }
 
-//   if (!order)
+//   if (!order) {
 //     return (
-//       <View style={styles.container}>
-//         <Text style={styles.pageTitle}>Order Not Found</Text>
-//         {error && <Text style={{ color: "red" }}>{error}</Text>}
-//         <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//           <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+//       <View style={styles.center}>
+//         <Text style={styles.errorTitle}>Order Summary Not Found</Text>
+//         <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
+//           <Text style={styles.primaryBtnText}>Return to Shop</Text>
 //         </Pressable>
 //       </View>
 //     );
+//   }
 
 //   return (
-//     <ScrollView contentContainerStyle={styles.container}>
-//       <View style={styles.content}>
-//         <Text style={styles.pageTitle}>Order Confirmed!</Text>
-//         <Text style={styles.lead}>Thank you for your order 🎉</Text>
+//     <SafeAreaView style={styles.safeArea}>
+//       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        
+//         {/* Success Header */}
+//         <View style={styles.header}>
+//           <View style={styles.iconCircle}>
+//             <Text style={{ fontSize: 32 }}>✨</Text>
+//           </View>
+//           <Text style={styles.pageTitle}>Order Confirmed!</Text>
+//           <Text style={styles.subtitle}>Thank you for choosing Happy Candles. Your order is being prepared with care.</Text>
+//         </View>
 
-//         <View style={styles.summary}>
-//           <View style={styles.summaryRow}>
-//             <Text style={styles.muted}>Order #</Text>
-//             <Text style={styles.value}>{order.order_number ?? order.id}</Text>
+//         {/* Luxe Receipt Card */}
+//         <View style={styles.receiptCard}>
+//           <View style={styles.cardHeader}>
+//             <Text style={styles.receiptLabel}>Transaction Receipt</Text>
+//             <Text style={styles.orderNo}>#{order.order_number || order.id.slice(0, 8)}</Text>
 //           </View>
-//           <View style={styles.summaryRow}>
-//             <Text style={styles.muted}>Total</Text>
-//             <Text style={styles.value}>
-//               {order.total_cents
-//                 ? centsToCurrency(order.total_cents, order.currency)
-//                 : `₹${order.amount ?? 0}`}
-//             </Text>
+          
+//           <View style={styles.divider} />
+
+//           {/* Mapping through JSONB Items */}
+//           <View style={styles.itemsList}>
+//             {order.items && Array.isArray(order.items) ? (
+//               order.items.map((item: any, index: number) => (
+//                 <View key={item.id || index} style={styles.itemRow}>
+//                   <View style={{ flex: 1 }}>
+//                     <Text style={styles.itemName}>{item.name || "Happy Candle"}</Text>
+//                     <Text style={styles.itemQty}>Quantity: {item.quantity || item.qty || 1}</Text>
+//                   </View>
+//                   <Text style={styles.itemPrice}>
+//                     {/* Fallback math if line_total_cents isn't in the JSON */}
+//                     {formatPrice(item.line_total_cents || (item.price * (item.quantity || 1)) || 0)}
+//                   </Text>
+//                 </View>
+//               ))
+//             ) : (
+//               <Text style={styles.emptyText}>Processing item details...</Text>
+//             )}
 //           </View>
-//           <View style={styles.summaryRow}>
-//             <Text style={styles.muted}>Status</Text>
-//             <Text style={styles.value}>{order.status ?? "Paid"}</Text>
+
+//           <View style={styles.divider} />
+
+//           {/* Grand Total */}
+//           <View style={styles.totalRow}>
+//             <Text style={styles.totalLabel}>Grand Total</Text>
+//             <Text style={styles.totalValue}>{formatPrice(order.total_cents || 0)}</Text>
 //           </View>
-//           <View style={styles.summaryRow}>
-//             <Text style={styles.muted}>Shipping Address</Text>
-//             <Text style={styles.value}>{order.shipping_address ?? "—"}</Text>
+
+//           {/* Details Section */}
+//           <View style={styles.metaSection}>
+//               <Text style={styles.metaRow}>Status: <Text style={styles.metaValue}>{order.status?.toUpperCase()}</Text></Text>
+//               {order.customer_name && <Text style={styles.metaRow}>Customer: <Text style={styles.metaValue}>{order.customer_name}</Text></Text>}
+//               {order.phone && <Text style={styles.metaRow}>Contact: <Text style={styles.metaValue}>{order.phone}</Text></Text>}
 //           </View>
 //         </View>
 
-//         <Pressable style={styles.secondaryBtn} onPress={handleOrders}>
-//           <Text style={styles.secondaryBtnText}>View Orders</Text>
-//         </Pressable>
-//         <Pressable style={styles.primaryBtn} onPress={handleContinue}>
-//           <Text style={styles.primaryBtnText}>Continue Shopping</Text>
-//         </Pressable>
-//       </View>
-//     </ScrollView>
+//         {/* Actions */}
+//         <View style={styles.footerActions}>
+//           <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
+//             <Text style={styles.primaryBtnText}>Continue Shopping</Text>
+//           </Pressable>
+//           <View style={styles.secondaryRow}>
+//             <Pressable style={styles.textLink} onPress={() => router.push("/account/profile")}>
+//               <Text style={styles.linkText}>View Order History</Text>
+//             </Pressable>
+//             <Pressable style={styles.textLink} onPress={() => alert("Printing not available in web preview")}>
+//               <Text style={styles.linkText}>Save as PDF</Text>
+//             </Pressable>
+//           </View>
+//         </View>
+
+//         <Text style={styles.supportText}>Need help? Contact support@thehappycandles.com</Text>
+//       </ScrollView>
+//     </SafeAreaView>
 //   );
 // }
 
+// const styles = StyleSheet.create({
+//   safeArea: { flex: 1, backgroundColor: "#FBFBFB" },
+//   container: { padding: 24, alignItems: "center", maxWidth: 600, alignSelf: 'center', width: '100%' },
+//   center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FBFBFB" },
+//   header: { alignItems: "center", marginBottom: 35, marginTop: 20 },
+//   iconCircle: { 
+//     width: 80, height: 80, borderRadius: 40, backgroundColor: "#fff", 
+//     justifyContent: "center", alignItems: "center", marginBottom: 20, 
+//     elevation: 4, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12 
+//   },
+//   pageTitle: { fontSize: 28, fontWeight: "800", color: "#1a1a1a", marginBottom: 8 },
+//   subtitle: { fontSize: 14, color: "#666", textAlign: "center", paddingHorizontal: 30, lineHeight: 20 },
+  
+//   receiptCard: { 
+//     backgroundColor: "#fff", width: "100%", borderRadius: 28, padding: 28, 
+//     shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 20, elevation: 4, 
+//     borderWidth: 1, borderColor: "#F2F2F2" 
+//   },
+//   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+//   receiptLabel: { fontSize: 11, fontWeight: "900", color: "#BBB", textTransform: "uppercase", letterSpacing: 1.5 },
+//   orderNo: { fontSize: 11, fontWeight: "700", color: "#888" },
+//   divider: { height: 1, backgroundColor: "#F7F7F7", marginVertical: 20 },
+  
+//   itemsList: { minHeight: 60 },
+//   itemRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
+//   itemName: { fontSize: 16, fontWeight: "700", color: "#1a1a1a" },
+//   itemQty: { fontSize: 12, color: "#999", marginTop: 4, fontWeight: "600" },
+//   itemPrice: { fontSize: 16, fontWeight: "700", color: "#1a1a1a" },
+  
+//   totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+//   totalLabel: { fontSize: 18, fontWeight: "800", color: "#1a1a1a" },
+//   totalValue: { fontSize: 26, fontWeight: "900", color: "#1a1a1a" },
+
+//   metaSection: { marginTop: 25, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#FAFAFA' },
+//   metaRow: { fontSize: 12, color: '#AAA', marginBottom: 5, fontWeight: '600' },
+//   metaValue: { color: '#666', fontWeight: '700' },
+
+//   footerActions: { width: "100%", marginTop: 35, gap: 15 },
+//   primaryBtn: { backgroundColor: "#1a1a1a", padding: 20, borderRadius: 18, alignItems: "center" },
+//   primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+//   secondaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
+//   textLink: { paddingVertical: 5 },
+//   linkText: { color: "#888", fontWeight: "700", fontSize: 13 },
+//   supportText: { marginTop: 40, fontSize: 11, color: '#CCC', marginBottom: 20 },
+  
+//   errorTitle: { fontSize: 20, fontWeight: "800", color: '#333', marginBottom: 20 },
+//   emptyText: { color: '#DDD', fontStyle: 'italic', textAlign: 'center' }
+// });
+
 import React, { useEffect, useState } from "react";
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
-  ActivityIndicator, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+  StyleSheet,
   SafeAreaView,
-  Platform 
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 
 export default function ConfirmationScreen() {
   const router = useRouter();
-  const { orderId } = useLocalSearchParams();
-  
+
+  // Handles both ?order_number=CANDLE-xxx and ?orderId=uuid
+  const params = useLocalSearchParams<{
+    order_number?: string;
+    orderId?: string;
+    id?: string;
+  }>();
+
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (orderId) {
-      fetchOrderDetails();
-    } else {
-      setLoading(false);
-    }
-  }, [orderId]);
+    fetchOrderDetails();
+  }, []);
 
   const fetchOrderDetails = async () => {
     setLoading(true);
-    try {
-      // Direct fetch from orders table (items is a JSONB column)
-      const { data, error } = await supabase
-        .from("orders")
-        .select(`*`)
-        .eq("id", orderId)
-        .single();
+    setError(null);
 
-      if (error) throw error;
-      setOrder(data);
+    try {
+      const orderNumber = params.order_number;
+      const orderId = params.orderId || params.id;
+
+      if (!orderNumber && !orderId) {
+        setError("No order reference found in URL.");
+        setLoading(false);
+        return;
+      }
+
+      let query = supabase.from("orders").select("*");
+
+      if (orderNumber) {
+        // Primary: fetch by order_number (e.g. CANDLE-1780559606422)
+        query = query.eq("order_number", orderNumber);
+      } else if (orderId) {
+        // Fallback: fetch by UUID
+        query = query.eq("id", orderId);
+      }
+
+      const { data, error: fetchError } = await query.single();
+
+      if (fetchError) {
+        console.error("Supabase error:", fetchError.message);
+        setError("Could not load order. Please check your order history.");
+      } else {
+        setOrder(data);
+      }
     } catch (err: any) {
-      console.error("Fetch error:", err.message);
+      console.error("Unexpected error:", err.message);
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const formatPrice = (cents: number) => 
+  const formatPrice = (cents: number) =>
     `₹${(cents / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#1a1a1a" />
+        <Text style={styles.loadingText}>Loading your order...</Text>
       </View>
     );
   }
 
-  if (!order) {
+  if (error || !order) {
     return (
       <View style={styles.center}>
+        <Text style={{ fontSize: 40, marginBottom: 16 }}>🕯️</Text>
         <Text style={styles.errorTitle}>Order Summary Not Found</Text>
-        <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
-          <Text style={styles.primaryBtnText}>Return to Shop</Text>
+        <Text style={styles.errorSubtitle}>
+          {error || "We couldn't find this order."}
+        </Text>
+        <Pressable
+          style={styles.primaryBtn}
+          onPress={() => router.push("/account/profile")}
+        >
+          <Text style={styles.primaryBtnText}>View Order History</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.primaryBtn, { backgroundColor: "#f5f5f5", marginTop: 10 }]}
+          onPress={() => router.push("/")}
+        >
+          <Text style={[styles.primaryBtnText, { color: "#1a1a1a" }]}>
+            Return to Shop
+          </Text>
         </Pressable>
       </View>
     );
@@ -226,38 +307,53 @@ export default function ConfirmationScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Success Header */}
         <View style={styles.header}>
           <View style={styles.iconCircle}>
             <Text style={{ fontSize: 32 }}>✨</Text>
           </View>
           <Text style={styles.pageTitle}>Order Confirmed!</Text>
-          <Text style={styles.subtitle}>Thank you for choosing Happy Candles. Your order is being prepared with care.</Text>
+          <Text style={styles.subtitle}>
+            Thank you for choosing Happy Candles. Your order is being prepared
+            with care.
+          </Text>
         </View>
 
-        {/* Luxe Receipt Card */}
+        {/* Receipt Card */}
         <View style={styles.receiptCard}>
           <View style={styles.cardHeader}>
             <Text style={styles.receiptLabel}>Transaction Receipt</Text>
-            <Text style={styles.orderNo}>#{order.order_number || order.id.slice(0, 8)}</Text>
+            <Text style={styles.orderNo}>
+              #{order.order_number || order.id?.slice(0, 8)}
+            </Text>
           </View>
-          
+
           <View style={styles.divider} />
 
-          {/* Mapping through JSONB Items */}
+          {/* Order Items */}
           <View style={styles.itemsList}>
-            {order.items && Array.isArray(order.items) ? (
+            {order.items && Array.isArray(order.items) && order.items.length > 0 ? (
               order.items.map((item: any, index: number) => (
                 <View key={item.id || index} style={styles.itemRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.itemName}>{item.name || "Happy Candle"}</Text>
-                    <Text style={styles.itemQty}>Quantity: {item.quantity || item.qty || 1}</Text>
+                    <Text style={styles.itemName}>
+                      {item.name || "Happy Candle"}
+                    </Text>
+                    <Text style={styles.itemQty}>
+                      Qty: {item.quantity || item.qty || 1}
+                    </Text>
                   </View>
                   <Text style={styles.itemPrice}>
-                    {/* Fallback math if line_total_cents isn't in the JSON */}
-                    {formatPrice(item.line_total_cents || (item.price * (item.quantity || 1)) || 0)}
+                    {formatPrice(
+                      item.line_total_cents ||
+                        item.price_cents * (item.quantity || item.qty || 1) ||
+                        item.price * (item.quantity || item.qty || 1) ||
+                        0
+                    )}
                   </Text>
                 </View>
               ))
@@ -268,36 +364,98 @@ export default function ConfirmationScreen() {
 
           <View style={styles.divider} />
 
-          {/* Grand Total */}
+          {/* Subtotal / Shipping / Total breakdown */}
+          {order.shipping_cents > 0 && (
+            <View style={styles.subtotalRow}>
+              <Text style={styles.subtotalLabel}>Shipping</Text>
+              <Text style={styles.subtotalValue}>
+                {formatPrice(order.shipping_cents)}
+              </Text>
+            </View>
+          )}
+          {order.discount_cents > 0 && (
+            <View style={styles.subtotalRow}>
+              <Text style={styles.subtotalLabel}>Discount</Text>
+              <Text style={[styles.subtotalValue, { color: "#4CAF50" }]}>
+                -{formatPrice(order.discount_cents)}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Grand Total</Text>
-            <Text style={styles.totalValue}>{formatPrice(order.total_cents || 0)}</Text>
+            <Text style={styles.totalValue}>
+              {formatPrice(order.total_cents || 0)}
+            </Text>
           </View>
 
-          {/* Details Section */}
+          {/* Order Meta */}
           <View style={styles.metaSection}>
-              <Text style={styles.metaRow}>Status: <Text style={styles.metaValue}>{order.status?.toUpperCase()}</Text></Text>
-              {order.customer_name && <Text style={styles.metaRow}>Customer: <Text style={styles.metaValue}>{order.customer_name}</Text></Text>}
-              {order.phone && <Text style={styles.metaRow}>Contact: <Text style={styles.metaValue}>{order.phone}</Text></Text>}
+            <View style={styles.metaBadge}>
+              <Text style={styles.metaBadgeText}>
+                {order.status?.toUpperCase() || "CONFIRMED"}
+              </Text>
+            </View>
+            {order.customer_name && (
+              <Text style={styles.metaRow}>
+                Customer:{" "}
+                <Text style={styles.metaValue}>{order.customer_name}</Text>
+              </Text>
+            )}
+            {order.phone && (
+              <Text style={styles.metaRow}>
+                Contact: <Text style={styles.metaValue}>{order.phone}</Text>
+              </Text>
+            )}
+            {order.created_at && (
+              <Text style={styles.metaRow}>
+                Placed on:{" "}
+                <Text style={styles.metaValue}>
+                  {new Date(order.created_at).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </Text>
+              </Text>
+            )}
+            {/* Shipping address if available */}
+            {order.shipping_address && (
+              <Text style={styles.metaRow}>
+                Ship to:{" "}
+                <Text style={styles.metaValue}>
+                  {typeof order.shipping_address === "string"
+                    ? order.shipping_address
+                    : `${order.shipping_address.line1 || ""}, ${
+                        order.shipping_address.city || ""
+                      }`}
+                </Text>
+              </Text>
+            )}
           </View>
         </View>
 
         {/* Actions */}
         <View style={styles.footerActions}>
-          <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
+          <Pressable
+            style={styles.primaryBtn}
+            onPress={() => router.push("/")}
+          >
             <Text style={styles.primaryBtnText}>Continue Shopping</Text>
           </Pressable>
           <View style={styles.secondaryRow}>
-            <Pressable style={styles.textLink} onPress={() => router.push("/account/profile")}>
+            <Pressable
+              style={styles.textLink}
+              onPress={() => router.push("/account/profile")}
+            >
               <Text style={styles.linkText}>View Order History</Text>
-            </Pressable>
-            <Pressable style={styles.textLink} onPress={() => alert("Printing not available in web preview")}>
-              <Text style={styles.linkText}>Save as PDF</Text>
             </Pressable>
           </View>
         </View>
 
-        <Text style={styles.supportText}>Need help? Contact support@thehappycandles.com</Text>
+        <Text style={styles.supportText}>
+          Need help? support@thehappycandles.com
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -305,49 +463,171 @@ export default function ConfirmationScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#FBFBFB" },
-  container: { padding: 24, alignItems: "center", maxWidth: 600, alignSelf: 'center', width: '100%' },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FBFBFB" },
+  container: {
+    padding: 24,
+    alignItems: "center",
+    maxWidth: 600,
+    alignSelf: "center",
+    width: "100%",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FBFBFB",
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: "#999",
+    fontWeight: "600",
+  },
   header: { alignItems: "center", marginBottom: 35, marginTop: 20 },
-  iconCircle: { 
-    width: 80, height: 80, borderRadius: 40, backgroundColor: "#fff", 
-    justifyContent: "center", alignItems: "center", marginBottom: 20, 
-    elevation: 4, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12 
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
   },
-  pageTitle: { fontSize: 28, fontWeight: "800", color: "#1a1a1a", marginBottom: 8 },
-  subtitle: { fontSize: 14, color: "#666", textAlign: "center", paddingHorizontal: 30, lineHeight: 20 },
-  
-  receiptCard: { 
-    backgroundColor: "#fff", width: "100%", borderRadius: 28, padding: 28, 
-    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 20, elevation: 4, 
-    borderWidth: 1, borderColor: "#F2F2F2" 
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#1a1a1a",
+    marginBottom: 8,
   },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  receiptLabel: { fontSize: 11, fontWeight: "900", color: "#BBB", textTransform: "uppercase", letterSpacing: 1.5 },
+  subtitle: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    paddingHorizontal: 30,
+    lineHeight: 20,
+  },
+
+  receiptCard: {
+    backgroundColor: "#fff",
+    width: "100%",
+    borderRadius: 28,
+    padding: 28,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "#F2F2F2",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  receiptLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#BBB",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+  },
   orderNo: { fontSize: 11, fontWeight: "700", color: "#888" },
-  divider: { height: 1, backgroundColor: "#F7F7F7", marginVertical: 20 },
-  
+  divider: {
+    height: 1,
+    backgroundColor: "#F7F7F7",
+    marginVertical: 20,
+  },
+
   itemsList: { minHeight: 60 },
-  itemRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
+  itemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 18,
+    alignItems: "flex-start",
+  },
   itemName: { fontSize: 16, fontWeight: "700", color: "#1a1a1a" },
   itemQty: { fontSize: 12, color: "#999", marginTop: 4, fontWeight: "600" },
   itemPrice: { fontSize: 16, fontWeight: "700", color: "#1a1a1a" },
-  
-  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+
+  subtotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  subtotalLabel: { fontSize: 13, color: "#999", fontWeight: "600" },
+  subtotalValue: { fontSize: 13, color: "#666", fontWeight: "700" },
+
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
+  },
   totalLabel: { fontSize: 18, fontWeight: "800", color: "#1a1a1a" },
   totalValue: { fontSize: 26, fontWeight: "900", color: "#1a1a1a" },
 
-  metaSection: { marginTop: 25, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#FAFAFA' },
-  metaRow: { fontSize: 12, color: '#AAA', marginBottom: 5, fontWeight: '600' },
-  metaValue: { color: '#666', fontWeight: '700' },
+  metaSection: {
+    marginTop: 25,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: "#FAFAFA",
+  },
+  metaBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 12,
+  },
+  metaBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#4CAF50",
+    letterSpacing: 1,
+  },
+  metaRow: {
+    fontSize: 12,
+    color: "#AAA",
+    marginBottom: 5,
+    fontWeight: "600",
+  },
+  metaValue: { color: "#666", fontWeight: "700" },
 
   footerActions: { width: "100%", marginTop: 35, gap: 15 },
-  primaryBtn: { backgroundColor: "#1a1a1a", padding: 20, borderRadius: 18, alignItems: "center" },
+  primaryBtn: {
+    backgroundColor: "#1a1a1a",
+    padding: 20,
+    borderRadius: 18,
+    alignItems: "center",
+  },
   primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
-  secondaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
+  secondaryRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
   textLink: { paddingVertical: 5 },
   linkText: { color: "#888", fontWeight: "700", fontSize: 13 },
-  supportText: { marginTop: 40, fontSize: 11, color: '#CCC', marginBottom: 20 },
-  
-  errorTitle: { fontSize: 20, fontWeight: "800", color: '#333', marginBottom: 20 },
-  emptyText: { color: '#DDD', fontStyle: 'italic', textAlign: 'center' }
+  supportText: { marginTop: 40, fontSize: 11, color: "#CCC", marginBottom: 20 },
+
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#333",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorSubtitle: {
+    fontSize: 13,
+    color: "#999",
+    marginBottom: 24,
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  emptyText: { color: "#DDD", fontStyle: "italic", textAlign: "center" },
 });

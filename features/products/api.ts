@@ -23,6 +23,7 @@ export type Product = {
   metadata?: Record<string, any> | null;
   created_at?: string | null;
   updated_at?: string | null;
+  variant_group_id: string | null 
 };
 
 /**
@@ -38,6 +39,7 @@ export type GetProductsOpts = {
     priceMinCents?: number;
     priceMaxCents?: number;
   };
+  
   orderBy?: { column: string; ascending?: boolean };
 };
 
